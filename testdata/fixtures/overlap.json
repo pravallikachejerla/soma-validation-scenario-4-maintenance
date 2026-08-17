@@ -1,0 +1,38 @@
+{
+  "promotion": {
+    "id": "promo-overlap",
+    "tenant_id": "tenant-a",
+    "name": "Overlap Promotion (private fixture)",
+    "type": "percent",
+    "value": 10.0,
+    "channel": "web",
+    "sku": "",
+    "priority": 5,
+    "valid_from": "2026-01-01T00:00:00Z",
+    "valid_until": "2027-01-01T00:00:00Z"
+  },
+  "sku_rule": {
+    "id": "promo-overlap",
+    "tenant_id": "tenant-a",
+    "name": "Overlap Promotion SKU rule",
+    "type": "percent",
+    "value": 10.0,
+    "channel": "web",
+    "sku": "SKU-00001",
+    "priority": 5,
+    "valid_from": "2026-01-01T00:00:00Z",
+    "valid_until": "2027-01-01T00:00:00Z"
+  },
+  "wildcard_rule": {
+    "id": "promo-overlap",
+    "tenant_id": "tenant-a",
+    "name": "Overlap Promotion wildcard rule",
+    "type": "percent",
+    "value": 10.0,
+    "channel": "web",
+    "sku": "",
+    "priority": 5,
+    "valid_from": "2026-01-01T00:00:00Z",
+    "valid_until": "2027-01-01T00:00:00Z"
+  }
+}
