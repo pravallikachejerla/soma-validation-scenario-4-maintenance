@@ -1,5 +1,3 @@
-// Package application contains the use-case-level services. They sit
-// between the HTTP transport and the storage layer.
 package application
 
 import (
@@ -19,17 +17,20 @@ type PricingService struct {
 	BatchEngine  *pricing.BatchEngine
 	Logger       *observability.Logger
 	Metrics      *observability.Metrics
+	OverrideSvc  *OverrideService // new for enhancement (independent wiring)
 }
 
 // NewPricingService wires a PricingService.
 func NewPricingService(s storage.Store, l *observability.Logger, m *observability.Metrics) *PricingService {
 	cache := pricing.NewResultCache(256)
+	overrideSvc := NewOverrideService(s, pricing.NewService()) // placeholder wiring; real would share engine
 	return &PricingService{
 		Store:       s,
 		Engine:      pricing.NewEngine(s, l, cache),
 		BatchEngine: pricing.NewBatchEngine(s, l, cache),
 		Logger:      l,
 		Metrics:     m,
+		OverrideSvc: overrideSvc,
 	}
 }
 
@@ -92,3 +93,8 @@ func (p *PricingService) ListProducts(ctx context.Context, tenantID string) ([]d
 
 // Now is a small helper for the seeder.
 func Now() time.Time { return time.Now().UTC() }
+
+// GetOverrideService exposes the new override service (for new versioned APIs).
+func (p *PricingService) GetOverrideService() *OverrideService {
+	return p.OverrideSvc
+}
