@@ -172,4 +172,4 @@ Current architecture and boundaries remain; new override and audit logic must re
 
 **Evaluators (updated):** Public tests (`make test-public`) + private evaluator suite must pass without weakening protected tests. New tests for deduplication, threshold checks, approval rules, audit emission. Manual verification of per-tenant enablement, two non-requester approvals, full audit trail, no duplicates.
 
-(This section was appended to the existing architecture document. All prior content preserved verbatim. No implementation code, tests, migrations, or other files in scope were changed — satisfying "Do not implement yet", independent traceability, test protection, and no promotion.)
+(
