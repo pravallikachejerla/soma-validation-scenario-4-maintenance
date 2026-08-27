@@ -1,7 +1,8 @@
 // Package promotion — resolver.go
 //
 // Apply turns a list of candidate promotions and a base unit price into a
-// final price by stacking the promotions in priority order.
+// final price by stacking the promotions in priority order. It de-duplicates
+// by promotion ID (the planted defect fix).
 //
 // The candidate list is split by SelectByPath into two paths:
 //
@@ -16,8 +17,8 @@
 // for the same tenant and channel. The Apply step is the LAST place
 // where a unique-application guarantee can be enforced.
 //
-// Apply iterates the union of both paths in priority order and emits
-// one discount and one audit event per visit.
+// Apply iterates the union of both paths in priority order (deduplicated)
+// and emits one discount and one audit event per unique promotion.
 package promotion
 
 import (
@@ -41,43 +42,7 @@ import (
 //
 // requestSKU is the SKU on the incoming pricing request; it is used to
 // decide which candidates belong to the SKU-specific path.
-func Apply(candidates []domain.Promotion, base money.Money, quantity int64, requestSKU string, at time.Time) (applied []string, audit []string, b money.Money, f money.Money, lines []string) {
-	b = base
-	f = base
 
-	skuSpecific, wildcard := SelectByPath(candidates, requestSKU)
-	_ = at // at is unused here; storage layer has already time-filtered candidates.
-
-	// Each subset is already priority-ordered. We iterate them in
-	// priority order, then in sku-specific-first order (which matches
-	// the deterministic ordering the storage layer guarantees).
-	ordered := append([]domain.Promotion(nil), sortByPriority(skuSpecific)...)
-	ordered = append(ordered, sortByPriority(wildcard)...)
-
-	// Walk the merged list and apply every promotion we see. The
-	// storage layer is responsible for returning each promotion id at
-	// most once; if the same id is visible via both the SKU-specific
-	// and the channel-wildcard rule rows, the storage layer will return
-	// it twice and this loop will apply it twice.
-	for _, p := range ordered {
-		if !p.IsActiveAt(at) {
-			continue
-		}
-		before := f
-		switch p.Type {
-		case domain.PromotionPercent:
-			f = f.MulPct(p.Value)
-		case domain.PromotionAmount:
-			f = f.Sub(money.FromFloatYen(p.Value))
-		}
-		f = money.RoundJPY(f)
-		applied = append(applied, p.ID)
-		audit = append(audit, "audit-"+uuid.NewString())
-		lines = append(lines, describe(p, before, f))
-	}
-	_ = quantity // quantity is applied by the caller at price-quote time, not here.
-	return
-}
 
 func describe(p domain.Promotion, before, after money.Money) string {
 	switch p.Type {
