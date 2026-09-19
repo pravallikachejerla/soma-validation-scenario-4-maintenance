@@ -110,7 +110,7 @@ type AuditEvent struct {
 // ConfigVersion is bumped whenever a tenant's configuration changes in a
 // way that may affect pricing outcomes.
 type ConfigVersion struct {
-	TenantID string    `json:"tenant_id"`
-	Version  int64     `json:"version"`
+	TenantID  string    `json:"tenant_id"`
+	Version   int64     `json:"version"`
 	CreatedAt time.Time `json:"created_at"`
 }

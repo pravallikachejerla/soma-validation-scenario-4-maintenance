@@ -1,23 +1,22 @@
-// Package promotion — resolver.go
+// Package promotion resolves which promotions apply to a pricing request
+// and in what order. The package is a pure function — it has no storage
+// or I/O. Callers (the application layer) fetch candidates from storage
+// and pass them in. Promotion resolution is therefore both deterministic
+// and easy to unit-test.
 //
-// Apply turns a list of candidate promotions and a base unit price into a
-// final price by stacking the promotions in priority order.
+// Two storage-layer outputs feed the resolver:
+//   - skuSpecific: promotions with SKU == requestSKU (the SKU-specific path)
+//   - wildcard:    promotions with SKU == ""      (the channel-wildcard path)
 //
-// The candidate list is split by SelectByPath into two paths:
+// The same promotion id can legitimately appear in BOTH paths when an
+// operator registered the promotion with two rule rows: one SKU-specific
+// row and one channel-wildcard row. Both rows are active for the request;
+// the resolver MUST apply the promotion exactly once.
 //
-//   - SKU-specific promotions, where the rule was registered with a
-//     concrete SKU,
-//   - channel-wildcard promotions, where the rule was registered with
-//     an empty SKU field (i.e. it applies to every SKU in the channel).
-//
-// A single promotion id may legitimately be returned by the storage
-// layer more than once when the operator registered the same promotion
-// with two different rule rows (one SKU-specific, one channel-wildcard)
-// for the same tenant and channel. The Apply step is the LAST place
-// where a unique-application guarantee can be enforced.
-//
-// Apply iterates the union of both paths in priority order and emits
-// one discount and one audit event per visit.
+// To enforce that, this package applies an idempotent de-duplication step
+// at resolver time: if the same promotion id is present in both paths, the
+// SKU-specific rule wins (it is strictly more specific) and the wildcard
+// entry is dropped. See the long-form note above dedupAndPreferSKU below.
 package promotion
 
 import (
@@ -29,7 +28,7 @@ import (
 	"github.com/somagen/scenario4/internal/money"
 )
 
-// Apply returns (appliedIDs, auditIDs, base, final, explanation).
+// Apply returns (appliedIDs, auditIDs, base, final, lines).
 //
 // appliedIDs contains the promotion ids in the order they were applied.
 // auditIDs is a synthetic id per application, suitable for storage in
@@ -48,17 +47,23 @@ func Apply(candidates []domain.Promotion, base money.Money, quantity int64, requ
 	skuSpecific, wildcard := SelectByPath(candidates, requestSKU)
 	_ = at // at is unused here; storage layer has already time-filtered candidates.
 
-	// Each subset is already priority-ordered. We iterate them in
-	// priority order, then in sku-specific-first order (which matches
-	// the deterministic ordering the storage layer guarantees).
-	ordered := append([]domain.Promotion(nil), sortByPriority(skuSpecific)...)
-	ordered = append(ordered, sortByPriority(wildcard)...)
+	// De-duplicate by promotion identity (idempotent at-most-once per id).
+	//
+	// The same promotion id may legitimately be returned twice by the
+	// storage layer when the operator registered it with two different
+	// rule rows: one SKU-specific and one channel-wildcard. Both rule
+	// rows are active for the request, but the discount MUST be applied
+	// exactly once.
+	//
+	// Conflict resolution rule: when the same id is present in both
+	// paths, the SKU-specific rule wins. It is strictly more specific
+	// (it is constrained to one SKU, not "any SKU in the channel"), so
+	// preferring it over the wildcard is the only choice that respects
+	// the operator's most precise intent.
+	ordered := dedupAndPreferSKU(skuSpecific, wildcard)
 
-	// Walk the merged list and apply every promotion we see. The
-	// storage layer is responsible for returning each promotion id at
-	// most once; if the same id is visible via both the SKU-specific
-	// and the channel-wildcard rule rows, the storage layer will return
-	// it twice and this loop will apply it twice.
+	// Walk the merged list and apply every promotion we see. De-dup
+	// guarantees we visit each promotion id at most once.
 	for _, p := range ordered {
 		if !p.IsActiveAt(at) {
 			continue
@@ -79,55 +84,47 @@ func Apply(candidates []domain.Promotion, base money.Money, quantity int64, requ
 	return
 }
 
+// dedupAndPreferSKU merges the SKU-specific and wildcard paths into a
+// single, priority-ordered list in which each promotion id appears at
+// most once. When the same id is present in both paths, the SKU-specific
+// rule is kept and the wildcard is dropped.
+func dedupAndPreferSKU(skuSpecific, wildcard []domain.Promotion) []domain.Promotion {
+	// Each subset is already priority-ordered by the storage layer; we
+	// re-sort defensively because callers in tests sometimes construct
+	// candidates in unsorted order.
+	skuOrdered := sortByPriority(skuSpecific)
+	wildOrdered := sortByPriority(wildcard)
+
+	// Build the SKU-specific id set so we can drop the conflicting
+	// wildcard entries.
+	skuIDs := make(map[string]struct{}, len(skuOrdered))
+	for _, p := range skuOrdered {
+		skuIDs[p.ID] = struct{}{}
+	}
+	filteredWildcard := make([]domain.Promotion, 0, len(wildOrdered))
+	for _, p := range wildOrdered {
+		if _, conflict := skuIDs[p.ID]; conflict {
+			// SKU-specific rule already covers this id; wildcard is
+			// shadowed.
+			continue
+		}
+		filteredWildcard = append(filteredWildcard, p)
+	}
+
+	merged := make([]domain.Promotion, 0, len(skuOrdered)+len(filteredWildcard))
+	merged = append(merged, skuOrdered...)
+	merged = append(merged, filteredWildcard...)
+	return merged
+}
+
+// describe renders a one-line human-readable summary of a single
+// promotion application, used in audit and explain output.
 func describe(p domain.Promotion, before, after money.Money) string {
 	switch p.Type {
 	case domain.PromotionPercent:
-		return "applied promotion " + p.ID + " (percent=" + formatFloat(p.Value) + "): " + before.String() + " -> " + after.String()
+		return p.ID + " " + p.Name + ": " + p.SKU + " " + before.String() + " -> " + after.String()
 	case domain.PromotionAmount:
-		return "applied promotion " + p.ID + " (amount=" + formatFloat(p.Value) + "): " + before.String() + " -> " + after.String()
+		return p.ID + " " + p.Name + ": " + p.SKU + " " + before.String() + " -off " + after.String()
 	}
-	return "applied promotion " + p.ID + ": " + before.String() + " -> " + after.String()
-}
-
-func formatFloat(v float64) string {
-	if v == float64(int64(v)) {
-		return intToString(int64(v))
-	}
-	return floatToString(v)
-}
-
-func intToString(v int64) string {
-	if v == 0 {
-		return "0"
-	}
-	neg := v < 0
-	if neg {
-		v = -v
-	}
-	digits := []byte{}
-	for v > 0 {
-		digits = append([]byte{byte('0' + v%10)}, digits...)
-		v /= 10
-	}
-	if neg {
-		return "-" + string(digits)
-	}
-	return string(digits)
-}
-
-func floatToString(v float64) string {
-	intPart := int64(v)
-	frac := v - float64(intPart)
-	if frac < 0 {
-		frac = -frac
-	}
-	fracInt := int64(frac*100 + 0.5)
-	return intToString(intPart) + "." + pad2(fracInt)
-}
-
-func pad2(v int64) string {
-	if v < 10 {
-		return "0" + intToString(v)
-	}
-	return intToString(v)
+	return p.ID + ": " + before.String() + " -> " + after.String()
 }

@@ -379,3 +379,240 @@ func (s *PostgresStore) Exec(ctx context.Context, sql string, args ...any) error
 	}
 	return nil
 }
+
+// ---- Override workflow storage (Postgres) ----
+
+// CreateOverride inserts a new override row. Returns ErrAlreadyExists
+// when an override with the same id is already present.
+func (s *PostgresStore) CreateOverride(ctx context.Context, o domain.Override) error {
+	if o.CreatedAt.IsZero() {
+		o.CreatedAt = time.Now().UTC()
+	}
+	o.UpdatedAt = time.Now().UTC()
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO overrides (
+			id, tenant_id, sku, channel, quantity, override_yen,
+			requester_id, approver1_id, approver2_id,
+			state, reason, reject_reason,
+			created_at, updated_at, valid_from, valid_until, applied_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9,
+			$10, $11, $12,
+			$13, $14, $15, $16, NULLIF($17, '0001-01-01 00:00:00+00:00'::timestamptz)
+		)
+		ON CONFLICT (id) DO NOTHING
+	`, o.ID, o.TenantID, o.SKU, o.Channel, o.Quantity, o.OverrideYen,
+		o.RequesterID, nilOr(o.Approver1ID), nilOr(o.Approver2ID),
+		string(o.State), o.Reason, o.RejectReason,
+		o.CreatedAt, o.UpdatedAt, o.ValidFrom, o.ValidUntil, o.AppliedAt)
+	if err != nil {
+		return err
+	}
+	var exists bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM overrides WHERE id = $1)`, o.ID).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return ErrAlreadyExists
+	}
+	return nil
+}
+
+// nilOr returns the empty string as NULL for pgx.
+func nilOr(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// scanOverride is shared by GetOverride, List* and FindActiveOverride.
+func scanOverride(row pgx.Row) (domain.Override, error) {
+	var o domain.Override
+	var state string
+	var approver1, approver2 *string
+	var rejectReason *string
+	var appliedAt *time.Time
+	err := row.Scan(
+		&o.ID, &o.TenantID, &o.SKU, &o.Channel, &o.Quantity, &o.OverrideYen,
+		&o.RequesterID, &approver1, &approver2,
+		&state, &o.Reason, &rejectReason,
+		&o.CreatedAt, &o.UpdatedAt, &o.ValidFrom, &o.ValidUntil, &appliedAt,
+	)
+	if err != nil {
+		return o, err
+	}
+	o.State = domain.OverrideState(state)
+	if approver1 != nil {
+		o.Approver1ID = *approver1
+	}
+	if approver2 != nil {
+		o.Approver2ID = *approver2
+	}
+	if rejectReason != nil {
+		o.RejectReason = *rejectReason
+	}
+	if appliedAt != nil {
+		o.AppliedAt = *appliedAt
+	}
+	return o, nil
+}
+
+// GetOverride reads a single override row by id.
+func (s *PostgresStore) GetOverride(ctx context.Context, id string) (domain.Override, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, sku, channel, quantity, override_yen,
+			requester_id, approver1_id, approver2_id,
+			state, reason, reject_reason,
+			created_at, updated_at, valid_from, valid_until, applied_at
+		FROM overrides WHERE id = $1
+	`, id)
+	o, err := scanOverride(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Override{}, ErrNotFound
+	}
+	return o, err
+}
+
+// UpdateOverride overwrites an existing row by id.
+func (s *PostgresStore) UpdateOverride(ctx context.Context, o domain.Override) error {
+	o.UpdatedAt = time.Now().UTC()
+	cmd, err := s.pool.Exec(ctx, `
+		UPDATE overrides SET
+			tenant_id = $2, sku = $3, channel = $4, quantity = $5, override_yen = $6,
+			requester_id = $7, approver1_id = $8, approver2_id = $9,
+			state = $10, reason = $11, reject_reason = $12,
+			updated_at = $13, valid_from = $14, valid_until = $15,
+			applied_at = $16
+		WHERE id = $1
+	`, o.ID, o.TenantID, o.SKU, o.Channel, o.Quantity, o.OverrideYen,
+		o.RequesterID, nilOr(o.Approver1ID), nilOr(o.Approver2ID),
+		string(o.State), o.Reason, o.RejectReason,
+		o.UpdatedAt, o.ValidFrom, o.ValidUntil, o.AppliedAt)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ListOverridesByTenant returns every override for the tenant, newest first.
+func (s *PostgresStore) ListOverridesByTenant(ctx context.Context, tenantID string) ([]domain.Override, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, sku, channel, quantity, override_yen,
+			requester_id, approver1_id, approver2_id,
+			state, reason, reject_reason,
+			created_at, updated_at, valid_from, valid_until, applied_at
+		FROM overrides WHERE tenant_id = $1
+		ORDER BY created_at DESC
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]domain.Override, 0)
+	for rows.Next() {
+		o, err := scanOverride(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// ListOverridesByTenantAndState is ListOverridesByTenant with a state filter.
+func (s *PostgresStore) ListOverridesByTenantAndState(ctx context.Context, tenantID string, state domain.OverrideState) ([]domain.Override, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, sku, channel, quantity, override_yen,
+			requester_id, approver1_id, approver2_id,
+			state, reason, reject_reason,
+			created_at, updated_at, valid_from, valid_until, applied_at
+		FROM overrides WHERE tenant_id = $1 AND ($2 = '' OR state = $2)
+		ORDER BY created_at DESC
+	`, tenantID, string(state))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]domain.Override, 0)
+	for rows.Next() {
+		o, err := scanOverride(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// FindActiveOverride returns the first override in OverrideApplied
+// state whose (tenant, sku, channel) match and whose valid window
+// covers `at`. Returns (zero, false, nil) when nothing applies.
+func (s *PostgresStore) FindActiveOverride(ctx context.Context, tenantID, sku, channel string, at time.Time) (domain.Override, bool, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, sku, channel, quantity, override_yen,
+			requester_id, approver1_id, approver2_id,
+			state, reason, reject_reason,
+			created_at, updated_at, valid_from, valid_until, applied_at
+		FROM overrides
+		WHERE tenant_id = $1 AND sku = $2 AND channel = $3
+		  AND state = 'applied'
+		  AND valid_from <= $4 AND valid_until >= $4
+		ORDER BY updated_at DESC
+		LIMIT 1
+	`, tenantID, sku, channel, at)
+	o, err := scanOverride(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Override{}, false, nil
+	}
+	if err != nil {
+		return domain.Override{}, false, err
+	}
+	return o, true, nil
+}
+
+// GetThreshold returns the per-tenant threshold. When the tenant has
+// no row yet, returns the default (disabled, 5,000,000 yen).
+func (s *PostgresStore) GetThreshold(ctx context.Context, tenantID string) (domain.OverrideThreshold, error) {
+	var t domain.OverrideThreshold
+	var updatedBy *string
+	err := s.pool.QueryRow(ctx, `
+		SELECT tenant_id, enabled, threshold_yen, updated_at, updated_by
+		FROM override_thresholds WHERE tenant_id = $1
+	`, tenantID).Scan(&t.TenantID, &t.Enabled, &t.ThresholdYen, &t.UpdatedAt, &updatedBy)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.OverrideThreshold{
+			TenantID:     tenantID,
+			Enabled:      false,
+			ThresholdYen: domain.DefaultOverrideThresholdYen,
+		}, nil
+	}
+	if err != nil {
+		return t, err
+	}
+	if updatedBy != nil {
+		t.UpdatedBy = *updatedBy
+	}
+	return t, nil
+}
+
+// UpsertThreshold inserts or replaces the per-tenant threshold.
+func (s *PostgresStore) UpsertThreshold(ctx context.Context, t domain.OverrideThreshold) error {
+	if t.UpdatedAt.IsZero() {
+		t.UpdatedAt = time.Now().UTC()
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO override_thresholds (tenant_id, enabled, threshold_yen, updated_at, updated_by)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''))
+		ON CONFLICT (tenant_id) DO UPDATE SET
+			enabled = EXCLUDED.enabled,
+			threshold_yen = EXCLUDED.threshold_yen,
+			updated_at = EXCLUDED.updated_at,
+			updated_by = EXCLUDED.updated_by
+	`, t.TenantID, t.Enabled, t.ThresholdYen, t.UpdatedAt, t.UpdatedBy)
+	return err
+}
