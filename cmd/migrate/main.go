@@ -1,6 +1,7 @@
 // Command migrate runs the SQL migrations against the configured
-// database. Direction "up" applies 0001_init.sql; direction "down"
-// applies 0001_init.down.sql.
+// database. Direction "up" applies every NNNN_*.sql file in sorted
+// order (so 0001 then 0002 then ...); direction "down" applies every
+// NNNN_*.down.sql file in REVERSE sorted order.
 package main
 
 import (
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/somagen/scenario4/internal/storage"
@@ -25,7 +27,7 @@ func main() {
 	if dsn == "" {
 		dsn = "postgres://pricing:pricing@localhost:5432/pricing?sslmode=disable"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	ps, err := storage.NewPostgresStore(ctx, dsn)
@@ -34,22 +36,40 @@ func main() {
 	}
 	defer ps.Close(context.Background())
 
-	pattern := "0001_init"
-	if *direction == "down" {
-		pattern = "0001_init.down"
-	}
-	// Resolve the absolute path so this works regardless of CWD.
 	abs, err := filepath.Abs(*dir)
 	if err != nil {
 		log.Fatalf("resolve dir: %v", err)
 	}
-	files, err := filepath.Glob(filepath.Join(abs, pattern+"*.sql"))
-	if err != nil {
-		log.Fatalf("glob: %v", err)
+
+	var files []string
+	if *direction == "down" {
+		// Apply down files in reverse sorted order.
+		pattern := filepath.Join(abs, "*.down.sql")
+		files, err = filepath.Glob(pattern)
+		if err != nil {
+			log.Fatalf("glob: %v", err)
+		}
+		sort.Sort(sort.Reverse(sort.StringSlice(files)))
+	} else {
+		// Apply up files in sorted order, skipping the .down.sql
+		// siblings (which are paired with their up file).
+		pattern := filepath.Join(abs, "*.sql")
+		all, err := filepath.Glob(pattern)
+		if err != nil {
+			log.Fatalf("glob: %v", err)
+		}
+		files = all[:0]
+		for _, f := range all {
+			if strings.HasSuffix(f, ".down.sql") {
+				continue
+			}
+			files = append(files, f)
+		}
+		sort.Strings(files)
 	}
-	sort.Strings(files)
+
 	if len(files) == 0 {
-		log.Fatalf("no migration files matched %s in %s", pattern, abs)
+		log.Fatalf("no migration files found in %s (direction=%s)", abs, *direction)
 	}
 	for _, f := range files {
 		fmt.Printf("applying %s ...\n", f)
@@ -61,5 +81,5 @@ func main() {
 			log.Fatalf("apply %s: %v", f, err)
 		}
 	}
-	fmt.Println("migrate: complete")
+	fmt.Printf("migrate: complete (%d file(s), direction=%s)\n", len(files), *direction)
 }

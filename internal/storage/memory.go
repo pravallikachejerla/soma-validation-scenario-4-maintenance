@@ -28,6 +28,7 @@ type Store interface {
 	BatchJobRepo
 	AuditRepo
 	ConfigRepo
+	OverrideRepo
 	Close(ctx context.Context) error
 }
 
@@ -81,34 +82,54 @@ type ConfigRepo interface {
 	BumpConfigVersion(ctx context.Context, tenantID string) (int64, error)
 }
 
+// OverrideRepo is the storage contract for the manual price-override
+// workflow. The override workflow is two-distinct-approver review with
+// role separation; the storage layer is responsible only for persisting
+// and reading rows, not for enforcing the workflow rules (those live
+// in internal/override).
+type OverrideRepo interface {
+	CreateOverride(ctx context.Context, o domain.Override) error
+	GetOverride(ctx context.Context, id string) (domain.Override, error)
+	UpdateOverride(ctx context.Context, o domain.Override) error
+	ListOverridesByTenant(ctx context.Context, tenantID string) ([]domain.Override, error)
+	ListOverridesByTenantAndState(ctx context.Context, tenantID string, state domain.OverrideState) ([]domain.Override, error)
+	FindActiveOverride(ctx context.Context, tenantID, sku, channel string, at time.Time) (domain.Override, bool, error)
+	GetThreshold(ctx context.Context, tenantID string) (domain.OverrideThreshold, error)
+	UpsertThreshold(ctx context.Context, t domain.OverrideThreshold) error
+}
+
 // MemoryStore is an in-process implementation of Store. All access is
 // guarded by a single RWMutex; this is fine for unit tests but not for
 // real concurrent throughput (the production backend is Postgres).
 type MemoryStore struct {
 	mu sync.RWMutex
 
-	tenants    map[string]domain.Tenant
-	users      map[string]domain.User
-	products   map[string]domain.Product    // key = tenantID + "|" + sku
-	customers  map[string]domain.Customer   // key = tenantID + "|" + id
-	promotions map[string]domain.Promotion  // key = id
-	decisions  map[string]domain.PricingDecision
-	batchJobs  map[string]domain.BatchJob
-	audits     []domain.AuditEvent
-	configs    map[string]int64 // tenantID -> version
+	tenants        map[string]domain.Tenant
+	users          map[string]domain.User
+	products       map[string]domain.Product   // key = tenantID + "|" + sku
+	customers      map[string]domain.Customer  // key = tenantID + "|" + id
+	promotions     map[string]domain.Promotion // key = id
+	decisions      map[string]domain.PricingDecision
+	batchJobs      map[string]domain.BatchJob
+	audits         []domain.AuditEvent
+	configs        map[string]int64                // tenantID -> version
+	overrides      map[string]domain.Override      // id -> override
+	overrideThresh map[string]domain.OverrideThreshold // tenantID -> threshold
 }
 
 // NewMemoryStore returns an empty MemoryStore.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		tenants:    make(map[string]domain.Tenant),
-		users:      make(map[string]domain.User),
-		products:   make(map[string]domain.Product),
-		customers:  make(map[string]domain.Customer),
-		promotions: make(map[string]domain.Promotion),
-		decisions:  make(map[string]domain.PricingDecision),
-		batchJobs:  make(map[string]domain.BatchJob),
-		configs:    make(map[string]int64),
+		tenants:        make(map[string]domain.Tenant),
+		users:          make(map[string]domain.User),
+		products:       make(map[string]domain.Product),
+		customers:      make(map[string]domain.Customer),
+		promotions:     make(map[string]domain.Promotion),
+		decisions:      make(map[string]domain.PricingDecision),
+		batchJobs:      make(map[string]domain.BatchJob),
+		configs:        make(map[string]int64),
+		overrides:      make(map[string]domain.Override),
+		overrideThresh: make(map[string]domain.OverrideThreshold),
 	}
 }
 
@@ -376,9 +397,143 @@ func (s *MemoryStore) BumpConfigVersion(ctx context.Context, tenantID string) (i
 	return s.configs[tenantID], nil
 }
 
+// ---- Override workflow storage ----
+
+// CreateOverride persists a new override request. The state MUST be
+// one of the recognised lifecycle states; storage does not validate the
+// transition, only the existence of the row.
+func (s *MemoryStore) CreateOverride(ctx context.Context, o domain.Override) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.overrides[o.ID]; exists {
+		return ErrAlreadyExists
+	}
+	if o.CreatedAt.IsZero() {
+		o.CreatedAt = time.Now().UTC()
+	}
+	s.overrides[o.ID] = o
+	return nil
+}
+
+// GetOverride returns the override row by id.
+func (s *MemoryStore) GetOverride(ctx context.Context, id string) (domain.Override, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	o, ok := s.overrides[id]
+	if !ok {
+		return domain.Override{}, ErrNotFound
+	}
+	return o, nil
+}
+
+// UpdateOverride replaces the override row in place. It returns
+// ErrNotFound when the id has no prior row.
+func (s *MemoryStore) UpdateOverride(ctx context.Context, o domain.Override) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.overrides[o.ID]; !ok {
+		return ErrNotFound
+	}
+	o.UpdatedAt = time.Now().UTC()
+	s.overrides[o.ID] = o
+	return nil
+}
+
+// ListOverridesByTenant returns every override for the tenant, in
+// created_at DESC order. The list is filtered by tenant only; callers
+// that need a state filter must use ListOverridesByTenantAndState.
+func (s *MemoryStore) ListOverridesByTenant(ctx context.Context, tenantID string) ([]domain.Override, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]domain.Override, 0)
+	for _, o := range s.overrides {
+		if o.TenantID != tenantID {
+			continue
+		}
+		out = append(out, o)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+// ListOverridesByTenantAndState is the same as ListOverridesByTenant
+// with an additional state filter; empty state means "any state".
+func (s *MemoryStore) ListOverridesByTenantAndState(ctx context.Context, tenantID string, state domain.OverrideState) ([]domain.Override, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]domain.Override, 0)
+	for _, o := range s.overrides {
+		if o.TenantID != tenantID {
+			continue
+		}
+		if state != "" && o.State != state {
+			continue
+		}
+		out = append(out, o)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+// FindActiveOverride returns the first applied override whose valid
+// window covers `at`. The lookup matches (tenant, sku, channel) and
+// uses IsActiveAt for the time check. Returns (zero, false, nil) when
+// no override applies.
+func (s *MemoryStore) FindActiveOverride(ctx context.Context, tenantID, sku, channel string, at time.Time) (domain.Override, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, o := range s.overrides {
+		if o.TenantID != tenantID {
+			continue
+		}
+		if o.SKU != sku {
+			continue
+		}
+		if o.Channel != channel {
+			continue
+		}
+		if !o.IsActiveAt(at) {
+			continue
+		}
+		return o, true, nil
+	}
+	return domain.Override{}, false, nil
+}
+
+// GetThreshold returns the per-tenant override threshold. The default
+// (disabled, JPY 5,000,000) is returned for tenants with no row yet.
+func (s *MemoryStore) GetThreshold(ctx context.Context, tenantID string) (domain.OverrideThreshold, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if t, ok := s.overrideThresh[tenantID]; ok {
+		return t, nil
+	}
+	return domain.OverrideThreshold{
+		TenantID:     tenantID,
+		Enabled:      false,
+		ThresholdYen: domain.DefaultOverrideThresholdYen,
+	}, nil
+}
+
+// UpsertThreshold inserts or replaces the per-tenant threshold.
+func (s *MemoryStore) UpsertThreshold(ctx context.Context, t domain.OverrideThreshold) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t.UpdatedAt = time.Now().UTC()
+	s.overrideThresh[t.TenantID] = t
+	return nil
+}
+
 // ErrNotFound is returned by memory store lookups that miss.
 var ErrNotFound = errNotFound{}
+var ErrAlreadyExists = errAlreadyExists{}
 
 type errNotFound struct{}
+type errAlreadyExists struct{}
 
-func (errNotFound) Error() string { return "not found" }
+func (errNotFound) Error() string     { return "not found" }
+func (errAlreadyExists) Error() string { return "already exists" }

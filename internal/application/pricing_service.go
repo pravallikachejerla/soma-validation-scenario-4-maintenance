@@ -14,23 +14,48 @@ import (
 
 // PricingService is the application-level service used by HTTP handlers.
 type PricingService struct {
-	Store        storage.Store
-	Engine       *pricing.Engine
-	BatchEngine  *pricing.BatchEngine
-	Logger       *observability.Logger
-	Metrics      *observability.Metrics
+	Store       storage.Store
+	Engine      *pricing.Engine
+	BatchEngine *pricing.BatchEngine
+	Logger      *observability.Logger
+	Metrics     *observability.Metrics
 }
 
-// NewPricingService wires a PricingService.
-func NewPricingService(s storage.Store, l *observability.Logger, m *observability.Metrics) *PricingService {
+// NewPricingService wires a PricingService. The override service is
+// optional — when present, the pricing engine will honour applied
+// overrides for any (tenant, sku, channel, at) match.
+func NewPricingService(s storage.Store, l *observability.Logger, m *observability.Metrics, ov *OverrideService) *PricingService {
 	cache := pricing.NewResultCache(256)
+	eng := pricing.NewEngine(s, l, cache)
+	if ov != nil {
+		eng.OverrideLookup = pricingOverrideLookup{ov: ov}
+	}
 	return &PricingService{
 		Store:       s,
-		Engine:      pricing.NewEngine(s, l, cache),
+		Engine:      eng,
 		BatchEngine: pricing.NewBatchEngine(s, l, cache),
 		Logger:      l,
 		Metrics:     m,
 	}
+}
+
+// pricingOverrideLookup adapts application.OverrideService to the
+// pricing.OverrideLookup interface. Keeping this adapter here, instead
+// of in the pricing package, preserves the layering rule that pricing
+// must not import application.
+type pricingOverrideLookup struct {
+	ov *OverrideService
+}
+
+func (p pricingOverrideLookup) FindActive(ctx context.Context, tenantID, sku, channel string, at time.Time) (int64, bool, error) {
+	o, ok, err := p.ov.FindActiveOverride(ctx, tenantID, sku, channel, at)
+	if err != nil {
+		return 0, false, err
+	}
+	if !ok {
+		return 0, false, nil
+	}
+	return o.OverrideYen, true, nil
 }
 
 // ListPromotions returns active promotions for a tenant and channel.

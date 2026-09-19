@@ -1,0 +1,22 @@
+$ go build ./...
+PASS
+
+$ go vet ./...
+PASS
+
+$ go test ./...
+?   	github.com/somagen/scenario4/cmd/api	[no test files]
+?   	github.com/somagen/scenario4/cmd/migrate	[no test files]
+?   	github.com/somagen/scenario4/cmd/seed	[no test files]
+?   	github.com/somagen/scenario4/internal/application	[no test files]
+?   	github.com/somagen/scenario4/internal/domain	[no test files]
+?   	github.com/somagen/scenario4/internal/httpapi	[no test files]
+?   	github.com/somagen/scenario4/internal/money	[no test files]
+?   	github.com/somagen/scenario4/internal/observability	[no test files]
+ok  	github.com/somagen/scenario4/internal/override	(cached)
+?   	github.com/somagen/scenario4/internal/pricing	[no test files]
+ok  	github.com/somagen/scenario4/internal/promotion	0.006s
+?   	github.com/somagen/scenario4/internal/security	[no test files]
+?   	github.com/somagen/scenario4/internal/storage	[no test files]
+ok  	github.com/somagen/scenario4/private	0.022s
+ok  	github.com/somagen/scenario4/tests/public	0.008s
