@@ -14,7 +14,7 @@ import (
 
 func TestHealthz(t *testing.T) {
 	store := storage.NewMemoryStore()
-	ps := application.NewPricingService(store, observability.Default("test"), observability.NewMetrics())
+	ps := application.NewPricingService(store, observability.Default("test"), observability.NewMetrics(), nil)
 	as := application.NewAdminService(store, 42)
 	srv := &httpapi.Server{Pricing: ps, Admin: as, Store: store, Logger: observability.Default("test"), Metrics: observability.NewMetrics(), Build: httpapi.BuildInfo{Commit: "test"}}
 	mux := httpapi.NewServer(srv)
@@ -36,7 +36,7 @@ func TestHealthz(t *testing.T) {
 
 func TestVersion(t *testing.T) {
 	store := storage.NewMemoryStore()
-	ps := application.NewPricingService(store, observability.Default("test"), observability.NewMetrics())
+	ps := application.NewPricingService(store, observability.Default("test"), observability.NewMetrics(), nil)
 	as := application.NewAdminService(store, 42)
 	srv := &httpapi.Server{Pricing: ps, Admin: as, Store: store, Logger: observability.Default("test"), Metrics: observability.NewMetrics(), Build: httpapi.BuildInfo{Commit: "abc123"}}
 	mux := httpapi.NewServer(srv)
