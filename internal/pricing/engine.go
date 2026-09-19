@@ -28,6 +28,21 @@ type Engine struct {
 	Store  storage.Store
 	Logger *observability.Logger
 	Cache  *ResultCache
+	// OverrideLookup is an optional indirection for retrieving the
+	// currently-applied override for a (tenant, sku, channel) triple.
+	// When nil, the engine behaves exactly as before — the override
+	// workflow becomes a no-op and pricing falls through to the
+	// promotion resolver only. Wiring the lookup here, instead of in
+	// the pricing package directly, keeps the pricing package
+	// independent of the override workflow package.
+	OverrideLookup OverrideLookup
+}
+
+// OverrideLookup is the minimal interface the pricing engine needs
+// from the override subsystem. Defined here so the pricing package
+// does not import the override package.
+type OverrideLookup interface {
+	FindActive(ctx context.Context, tenantID, sku, channel string, at time.Time) (overrideYen int64, ok bool, err error)
 }
 
 // NewEngine wires the engine with its dependencies.
@@ -84,6 +99,28 @@ func (e *Engine) Quote(ctx context.Context, req domain.PricingRequest) (domain.P
 	observability.NewMetrics().QueryCount.Add(2) // product + candidates
 
 	applied, audit, base, final, lines := promotion.Apply(candidates, money.FromYen(product.BaseYen), req.Quantity, req.SKU, req.At)
+
+	// Manual override: when an applied override exists for this
+	// (tenant, sku, channel) at this time, it pins the JPY unit
+	// price and the override is recorded in the decision. The
+	// override is checked AFTER the promotion resolver so the audit
+	// trail still shows the promotion-derived price that was
+	// overridden. Per-line totals and the AppliedIDs list are
+	// updated to reflect the override.
+	overrideApplied := ""
+	if e.OverrideLookup != nil {
+		ovYen, ok, err := e.OverrideLookup.FindActive(ctx, req.TenantID, req.SKU, req.Channel, req.At)
+		if err != nil {
+			return domain.PricingDecision{}, fmt.Errorf("lookup override: %w", err)
+		}
+		if ok {
+			overrideApplied = "manual-override"
+			base = money.FromYen(ovYen)
+			final = money.FromYen(ovYen).MulScalar(req.Quantity)
+			lines = append(lines, fmt.Sprintf("override applied: unit=%d qty=%d total=%d", ovYen, req.Quantity, int64(final)))
+			applied = append(applied, overrideApplied)
+		}
+	}
 
 	d := domain.PricingDecision{
 		RequestHash:      cacheKey,

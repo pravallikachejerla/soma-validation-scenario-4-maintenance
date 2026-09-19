@@ -14,7 +14,7 @@ func TestPromotion_CRUD(t *testing.T) {
 	store := storage.NewMemoryStore()
 	ctx := context.Background()
 	_ = store.UpsertTenant(ctx, domain.Tenant{ID: "tenant-a", Name: "T"})
-	ps := application.NewPricingService(store, nil, nil)
+	ps := application.NewPricingService(store, nil, nil, nil)
 	p := domain.Promotion{
 		ID:         "promo-1",
 		TenantID:   "tenant-a",
@@ -50,7 +50,7 @@ func TestPromotion_ListIsChannelScoped(t *testing.T) {
 	store := storage.NewMemoryStore()
 	ctx := context.Background()
 	_ = store.UpsertTenant(ctx, domain.Tenant{ID: "tenant-a", Name: "T"})
-	ps := application.NewPricingService(store, nil, nil)
+	ps := application.NewPricingService(store, nil, nil, nil)
 	for _, ch := range []string{"web", "store", "mobile"} {
 		_ = ps.CreatePromotion(ctx, domain.Promotion{
 			ID:         "promo-" + ch,
