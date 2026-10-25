@@ -1,0 +1,9 @@
+{
+  "build": "npm run build",
+  "start": [
+    "go build -o /tmp/api ./cmd/api && STORAGE_BACKEND=memory LISTEN_ADDR=:8080 /tmp/api",
+    "cd frontend && npm start"
+  ],
+  "port": 4173,
+  "path": "/"
+}

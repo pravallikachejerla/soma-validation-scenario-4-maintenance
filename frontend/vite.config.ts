@@ -14,7 +14,13 @@ export default defineConfig({
     },
   },
   preview: {
-    port: 5173,
+    port: 4173,
     host: "0.0.0.0",
+    proxy: {
+      "/api": "http://localhost:8080",
+      "/healthz": "http://localhost:8080",
+      "/version": "http://localhost:8080",
+      "/metrics": "http://localhost:8080",
+    },
   },
 });
