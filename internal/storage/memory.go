@@ -100,9 +100,9 @@ type MemoryStore struct {
 
 	tenants    map[string]domain.Tenant
 	users      map[string]domain.User
-	products   map[string]domain.Product   // key = tenantID + "|" + sku
-	customers  map[string]domain.Customer  // key = tenantID + "|" + id
-	promotions map[string]domain.Promotion // key = id
+	products   map[string]domain.Product    // key = tenantID + "|" + sku
+	customers  map[string]domain.Customer   // key = tenantID + "|" + id
+	promotions map[string]domain.Promotion  // key = id
 	decisions  map[string]domain.PricingDecision
 	batchJobs  map[string]domain.BatchJob
 	audits     []domain.AuditEvent

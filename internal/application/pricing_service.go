@@ -14,11 +14,11 @@ import (
 
 // PricingService is the application-level service used by HTTP handlers.
 type PricingService struct {
-	Store       storage.Store
-	Engine      *pricing.Engine
-	BatchEngine *pricing.BatchEngine
-	Logger      *observability.Logger
-	Metrics     *observability.Metrics
+	Store        storage.Store
+	Engine       *pricing.Engine
+	BatchEngine  *pricing.BatchEngine
+	Logger       *observability.Logger
+	Metrics      *observability.Metrics
 }
 
 // NewPricingService wires a PricingService.

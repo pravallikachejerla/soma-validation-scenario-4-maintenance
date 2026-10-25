@@ -85,7 +85,7 @@ func TestInteractiveAndBatchAgree(t *testing.T) {
 	if err := store.UpsertPromotion(ctx, domain.Promotion{
 		ID: "promo-public-1", TenantID: "tenant-a", Name: "P", Type: domain.PromotionPercent,
 		Value: 10.0, Channel: "web", Priority: 5,
-		ValidFrom:  time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		ValidFrom: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		ValidUntil: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatal(err)

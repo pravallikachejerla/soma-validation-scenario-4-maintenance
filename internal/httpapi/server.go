@@ -10,7 +10,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,14 +24,13 @@ import (
 
 // Server bundles the HTTP router and its dependencies.
 type Server struct {
-	Mux      *http.ServeMux
-	Pricing  *application.PricingService
-	Admin    *application.AdminService
-	Override *application.OverrideService
-	Store    storage.Store
-	Logger   *observability.Logger
-	Metrics  *observability.Metrics
-	Build    BuildInfo
+	Mux     *http.ServeMux
+	Pricing *application.PricingService
+	Admin   *application.AdminService
+	Store   storage.Store
+	Logger  *observability.Logger
+	Metrics *observability.Metrics
+	Build   BuildInfo
 }
 
 // BuildInfo is exposed through /version.
@@ -65,11 +63,6 @@ func (s *Server) routes() {
 	s.Mux.HandleFunc("/api/v1/audit", s.withCtx(s.handleAudit))
 	s.Mux.HandleFunc("/api/v1/batch_jobs/", s.withCtx(s.handleBatchJob))
 	s.Mux.HandleFunc("/api/v1/admin/seed", s.withCtx(s.handleAdminSeed))
-
-	// Manual price-override approval workflow.
-	s.Mux.HandleFunc("/api/v1/overrides", s.withCtx(s.handleOverrides))
-	s.Mux.HandleFunc("/api/v1/overrides/", s.withCtx(s.handleOverrideItem))
-	s.Mux.HandleFunc("/api/v1/tenants/", s.withCtx(s.handleTenantItem))
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -107,9 +100,9 @@ func (s *Server) withCtx(h http.HandlerFunc) http.HandlerFunc {
 		ww := &statusRecorder{ResponseWriter: w, status: 200}
 		h(ww, r.WithContext(ctx))
 		s.Logger.Info(ctx, "http.request", map[string]any{
-			"method":     r.Method,
-			"path":       r.URL.Path,
-			"status":     ww.status,
+			"method":    r.Method,
+			"path":      r.URL.Path,
+			"status":    ww.status,
 			"latency_ms": time.Since(start).Milliseconds(),
 		})
 	}
@@ -174,8 +167,8 @@ func (s *Server) handleBatch(w http.ResponseWriter, r *http.Request) {
 	jobID := "job-" + uuid.NewString()
 	hash := pricing.ResultHash(results)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"job_id":      jobID,
-		"result":      results,
+		"job_id":     jobID,
+		"result":     results,
 		"result_hash": hash,
 	})
 }
@@ -308,192 +301,6 @@ func (s *Server) handleAdminSeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "seeded", "tenants": prof.Tenants})
-}
-
-// --- Manual price-override approval workflow ---------------------------
-
-type overrideCreateRequest struct {
-	TenantID    string `json:"tenant_id"`
-	RequesterID string `json:"requester_id"`
-	SKU         string `json:"sku"`
-	Channel     string `json:"channel"`
-	CustomerID  string `json:"customer_id"`
-	OriginalYen int64  `json:"original_yen"`
-	OverrideYen int64  `json:"override_yen"`
-	Reason      string `json:"reason"`
-}
-
-type overrideDecisionRequest struct {
-	ApproverID string `json:"approver_id"`
-	Reason     string `json:"reason"`
-}
-
-func (s *Server) handleOverrides(w http.ResponseWriter, r *http.Request) {
-	if s.Override == nil {
-		http.Error(w, "override service not configured", http.StatusServiceUnavailable)
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		tenant := r.URL.Query().Get("tenant_id")
-		limit := 50
-		if v := r.URL.Query().Get("limit"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil {
-				limit = n
-			}
-		}
-		out, err := s.Override.ListOverrides(r.Context(), tenant, limit)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, http.StatusOK, out)
-	case http.MethodPost:
-		var body overrideCreateRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		req, err := s.Override.CreateOverrideRequest(
-			r.Context(),
-			body.TenantID, body.RequesterID, body.SKU, body.Channel, body.CustomerID,
-			body.OriginalYen, body.OverrideYen, body.Reason,
-		)
-		if err != nil {
-			s.writeOverrideError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusCreated, req)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) handleOverrideItem(w http.ResponseWriter, r *http.Request) {
-	if s.Override == nil {
-		http.Error(w, "override service not configured", http.StatusServiceUnavailable)
-		return
-	}
-	rest := strings.TrimPrefix(r.URL.Path, "/api/v1/overrides/")
-	if rest == "" {
-		http.Error(w, "id required", http.StatusBadRequest)
-		return
-	}
-	// Path forms:
-	//   /api/v1/overrides/{id}
-	//   /api/v1/overrides/{id}/approve
-	//   /api/v1/overrides/{id}/reject
-	//   /api/v1/overrides/{id}/apply
-	parts := strings.SplitN(rest, "/", 2)
-	id := parts[0]
-	action := ""
-	if len(parts) == 2 {
-		action = parts[1]
-	}
-	switch {
-	case r.Method == http.MethodGet && action == "":
-		req, err := s.Override.GetOverride(r.Context(), id)
-		if err != nil {
-			s.writeOverrideError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, req)
-	case r.Method == http.MethodPost && (action == "approve" || action == "reject"):
-		var body overrideDecisionRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		var (
-			req domain.OverrideRequest
-			err error
-		)
-		if action == "approve" {
-			req, err = s.Override.ApproveOverride(r.Context(), id, body.ApproverID, body.Reason)
-		} else {
-			req, err = s.Override.RejectOverride(r.Context(), id, body.ApproverID, body.Reason)
-		}
-		if err != nil {
-			s.writeOverrideError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, req)
-	case r.Method == http.MethodPost && action == "apply":
-		req, err := s.Override.ApplyOverride(r.Context(), id)
-		if err != nil {
-			s.writeOverrideError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, req)
-	default:
-		http.Error(w, "not found", http.StatusNotFound)
-	}
-}
-
-func (s *Server) writeOverrideError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, application.ErrOverrideFeatureDisabled),
-		errors.Is(err, application.ErrOverrideSelfApproval),
-		errors.Is(err, application.ErrOverrideAlreadyDecided):
-		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, application.ErrOverrideNotFound):
-		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, application.ErrOverrideReasonMissing),
-		errors.Is(err, application.ErrOverrideThresholdZero),
-		errors.Is(err, application.ErrOverrideApproverMissing):
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	default:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-// --- Tenant configuration (per-tenant override threshold) ---------------
-
-type tenantUpdateRequest struct {
-	OverrideEnabled   *bool  `json:"override_enabled,omitempty"`
-	OverrideThreshold *int64 `json:"override_threshold_yen,omitempty"`
-}
-
-func (s *Server) handleTenantItem(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/api/v1/tenants/")
-	if id == "" {
-		http.Error(w, "id required", http.StatusBadRequest)
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		t, err := s.Store.GetTenant(r.Context(), id)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-		writeJSON(w, http.StatusOK, t)
-	case http.MethodPatch:
-		var body tenantUpdateRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		t, err := s.Store.GetTenant(r.Context(), id)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-		if body.OverrideEnabled != nil {
-			t.OverrideEnabled = *body.OverrideEnabled
-		}
-		if body.OverrideThreshold != nil {
-			t.OverrideThreshold = *body.OverrideThreshold
-		}
-		if err := s.Store.UpsertTenant(r.Context(), t); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		_, _ = s.Store.BumpConfigVersion(r.Context(), id)
-		writeJSON(w, http.StatusOK, t)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
 }
 
 // LoggedRoundTrip is a placeholder hook for tests that need a

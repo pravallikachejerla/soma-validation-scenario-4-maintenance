@@ -52,28 +52,8 @@ func (a *AdminService) Seed(ctx context.Context, prof SeedProfile) error {
 	for i := 0; i < prof.Tenants; i++ {
 		tid := fmt.Sprintf("tenant-%c", 'a'+i)
 		tenantIDs = append(tenantIDs, tid)
-		t := domain.Tenant{ID: tid, Name: "Synthetic " + tid}
-		if i == 0 {
-			// tenant-a: feature enabled, custom threshold.
-			t.OverrideEnabled = true
-			t.OverrideThreshold = 3_000_000
-		}
-		if err := a.Store.UpsertTenant(ctx, t); err != nil {
+		if err := a.Store.UpsertTenant(ctx, domain.Tenant{ID: tid, Name: "Synthetic " + tid}); err != nil {
 			return err
-		}
-		// Seed three synthetic users per tenant: a requester, an
-		// approver, and an administrator. The override workflow
-		// uses these identities for the requester-vs-approver
-		// separation tests.
-		users := []domain.User{
-			{ID: tid + "-requester", TenantID: tid, Name: "Requester " + tid, Role: "requester"},
-			{ID: tid + "-approver", TenantID: tid, Name: "Approver " + tid, Role: "approver"},
-			{ID: tid + "-admin", TenantID: tid, Name: "Admin " + tid, Role: "admin"},
-		}
-		for _, u := range users {
-			if err := a.Store.UpsertUser(ctx, u); err != nil {
-				return err
-			}
 		}
 	}
 	for _, tid := range tenantIDs {
