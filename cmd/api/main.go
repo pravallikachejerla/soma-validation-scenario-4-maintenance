@@ -37,6 +37,17 @@ func main() {
 	var store storage.Store
 	if os.Getenv("STORAGE_BACKEND") == "memory" {
 		store = storage.NewMemoryStore()
+		// Auto-seed tenants with the override feature enabled so the
+		// override workflow is exercisable in the sandbox. In production
+		// the feature flag defaults to FALSE and is enabled per-tenant.
+		for _, tid := range []string{"tenant-a", "tenant-b", "tenant-c"} {
+			_ = store.UpsertTenant(context.Background(), domain.Tenant{
+				ID:                tid,
+				Name:              "Synthetic " + tid,
+				OverrideEnabled:   true,
+				OverrideThreshold: 0,
+			})
+		}
 	} else {
 		ps, err := storage.NewPostgresStore(ctx, dsn)
 		if err != nil {
@@ -52,33 +63,13 @@ func main() {
 	metrics := observability.NewMetrics()
 	ps := application.NewPricingService(store, logger, metrics)
 	as := application.NewAdminService(store, 42)
-	overrideSvc := application.NewOverrideService(store, logger)
-
-	// Auto-seed: ensure tenant-a exists with the override feature enabled
-	// so the UI and E2E tests can exercise the workflow without an
-	// explicit seed call. This is additive and does not change the
-	// public pricing API.
-	seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	for _, tid := range []string{"tenant-a", "tenant-b", "tenant-c"} {
-		t := domain.Tenant{
-			ID:              tid,
-			Name:            "Synthetic " + tid,
-			CreatedAt:       time.Now().UTC(),
-			OverrideEnabled: true,
-		}
-		if err := store.UpsertTenant(seedCtx, t); err != nil {
-			logger.Warn(seedCtx, "auto.seed.tenant.failed", map[string]any{"tenant": tid, "err": err.Error()})
-		}
-	}
-	seedCancel()
 
 	srv := &httpapi.Server{
-		Pricing:  ps,
-		Admin:    as,
-		Override: overrideSvc,
-		Store:    store,
-		Logger:   logger,
-		Metrics:  metrics,
+		Pricing: ps,
+		Admin:   as,
+		Store:   store,
+		Logger:  logger,
+		Metrics: metrics,
 		Build: httpapi.BuildInfo{
 			Commit:  commit,
 			BuiltAt: time.Now().UTC().Format(time.RFC3339),
