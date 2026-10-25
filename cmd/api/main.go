@@ -53,6 +53,24 @@ func main() {
 	as := application.NewAdminService(store, 42)
 	overrideSvc := application.NewOverrideService(store, logger)
 
+	// Auto-seed: ensure tenant-a exists with the override feature enabled
+	// so the UI and E2E tests can exercise the workflow without an
+	// explicit seed call. This is additive and does not change the
+	// public pricing API.
+	seedCtx, seedCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := as.Seed(seedCtx, application.DefaultProfile()); err != nil {
+		logger.Warn(seedCtx, "auto.seed.failed", map[string]any{"err": err.Error()})
+	}
+	// Enable the override feature on every seeded tenant.
+	for _, tid := range []string{"tenant-a", "tenant-b", "tenant-c"} {
+		t, err := store.GetTenant(seedCtx, tid)
+		if err == nil {
+			t.OverrideEnabled = true
+			_ = store.UpsertTenant(seedCtx, t)
+		}
+	}
+	seedCancel()
+
 	srv := &httpapi.Server{
 		Pricing:  ps,
 		Admin:    as,
