@@ -379,3 +379,115 @@ func (s *PostgresStore) Exec(ctx context.Context, sql string, args ...any) error
 	}
 	return nil
 }
+
+// GetOverrideSettings returns the settings for a tenant, or defaults if unset.
+func (s *PostgresStore) GetOverrideSettings(ctx context.Context, tenantID string) (domain.TenantOverrideSettings, error) {
+	var settings domain.TenantOverrideSettings
+	err := s.pool.QueryRow(ctx, `
+		SELECT tenant_id, threshold_yen, required_approvals, override_enabled
+		FROM override_settings WHERE tenant_id = $1
+	`, tenantID).Scan(&settings.TenantID, &settings.ThresholdYen, &settings.RequiredApprovals, &settings.OverrideEnabled)
+	if err != nil {
+		return domain.TenantOverrideSettings{
+			TenantID: tenantID, ThresholdYen: domain.DefaultThresholdYen,
+			RequiredApprovals: domain.DefaultRequiredApprovals, OverrideEnabled: false,
+		}, nil
+	}
+	return settings, nil
+}
+
+// UpsertOverrideSettings creates or updates the settings for a tenant.
+func (s *PostgresStore) UpsertOverrideSettings(ctx context.Context, settings domain.TenantOverrideSettings) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO override_settings (tenant_id, threshold_yen, required_approvals, override_enabled)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (tenant_id) DO UPDATE SET
+			threshold_yen = EXCLUDED.threshold_yen,
+			required_approvals = EXCLUDED.required_approvals,
+			override_enabled = EXCLUDED.override_enabled
+	`, settings.TenantID, settings.ThresholdYen, settings.RequiredApprovals, settings.OverrideEnabled)
+	return err
+}
+
+// CreateOverrideRequest stores a new override request.
+func (s *PostgresStore) CreateOverrideRequest(ctx context.Context, r domain.OverrideRequest) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO override_requests (id, tenant_id, requester_id, sku, channel, base_price_yen, override_yen, reason, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, r.ID, r.TenantID, r.RequesterID, r.SKU, r.Channel, r.BasePriceYen, r.OverrideYen, r.Reason, string(r.Status), r.CreatedAt, r.UpdatedAt)
+	return err
+}
+
+// GetOverrideRequest returns an override request by id.
+func (s *PostgresStore) GetOverrideRequest(ctx context.Context, id string) (domain.OverrideRequest, error) {
+	var r domain.OverrideRequest
+	var status string
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, requester_id, sku, channel, base_price_yen, override_yen, reason, status, created_at, updated_at
+		FROM override_requests WHERE id = $1
+	`, id).Scan(&r.ID, &r.TenantID, &r.RequesterID, &r.SKU, &r.Channel, &r.BasePriceYen, &r.OverrideYen, &r.Reason, &status, &r.CreatedAt, &r.UpdatedAt)
+	if err != nil {
+		return domain.OverrideRequest{}, ErrOverrideNotFound
+	}
+	r.Status = domain.OverrideStatus(status)
+	return r, nil
+}
+
+// ListOverrideRequests returns all override requests for a tenant.
+func (s *PostgresStore) ListOverrideRequests(ctx context.Context, tenantID string) ([]domain.OverrideRequest, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, requester_id, sku, channel, base_price_yen, override_yen, reason, status, created_at, updated_at
+		FROM override_requests WHERE tenant_id = $1
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var results []domain.OverrideRequest
+	for rows.Next() {
+		var r domain.OverrideRequest
+		var status string
+		if err := rows.Scan(&r.ID, &r.TenantID, &r.RequesterID, &r.SKU, &r.Channel, &r.BasePriceYen, &r.OverrideYen, &r.Reason, &status, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, err
+		}
+		r.Status = domain.OverrideStatus(status)
+		results = append(results, r)
+	}
+	return results, nil
+}
+
+// UpdateOverrideRequest updates an existing override request.
+func (s *PostgresStore) UpdateOverrideRequest(ctx context.Context, r domain.OverrideRequest) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE override_requests SET status = $2, updated_at = $3 WHERE id = $1
+	`, r.ID, string(r.Status), r.UpdatedAt)
+	return err
+}
+
+// AppendOverrideAudit appends an audit entry for an override action.
+func (s *PostgresStore) AppendOverrideAudit(ctx context.Context, requestID, action, actorID, reason string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO override_audit (request_id, action, actor_id, reason) VALUES ($1, $2, $3, $4)
+	`, requestID, action, actorID, reason)
+	return err
+}
+
+// ListOverrideAudit returns all audit entries for an override request.
+func (s *PostgresStore) ListOverrideAudit(ctx context.Context, requestID string) ([]OverrideAuditEntry, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT request_id, action, actor_id, reason, at FROM override_audit WHERE request_id = $1 ORDER BY at
+	`, requestID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var results []OverrideAuditEntry
+	for rows.Next() {
+		var e OverrideAuditEntry
+		if err := rows.Scan(&e.RequestID, &e.Action, &e.ActorID, &e.Reason, &e.At); err != nil {
+			return nil, err
+		}
+		results = append(results, e)
+	}
+	return results, nil
+}

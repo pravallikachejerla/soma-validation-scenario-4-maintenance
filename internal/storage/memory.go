@@ -10,6 +10,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ type Store interface {
 	BatchJobRepo
 	AuditRepo
 	ConfigRepo
+	OverrideRepo
 	Close(ctx context.Context) error
 }
 
@@ -81,6 +83,32 @@ type ConfigRepo interface {
 	BumpConfigVersion(ctx context.Context, tenantID string) (int64, error)
 }
 
+type OverrideRepo interface {
+	GetOverrideSettings(ctx context.Context, tenantID string) (domain.TenantOverrideSettings, error)
+	UpsertOverrideSettings(ctx context.Context, s domain.TenantOverrideSettings) error
+	CreateOverrideRequest(ctx context.Context, r domain.OverrideRequest) error
+	GetOverrideRequest(ctx context.Context, id string) (domain.OverrideRequest, error)
+	ListOverrideRequests(ctx context.Context, tenantID string) ([]domain.OverrideRequest, error)
+	UpdateOverrideRequest(ctx context.Context, r domain.OverrideRequest) error
+	AppendOverrideAudit(ctx context.Context, requestID, action, actorID, reason string) error
+	ListOverrideAudit(ctx context.Context, requestID string) ([]OverrideAuditEntry, error)
+}
+
+// OverrideAuditEntry is a single audit record for an override action.
+type OverrideAuditEntry struct {
+	RequestID string
+	Action    string
+	ActorID   string
+	Reason    string
+	At        time.Time
+}
+
+var (
+	ErrOverrideNotFound  = errors.New("override not found")
+	ErrDuplicateApprover = errors.New("duplicate approver")
+	ErrSelfApproval      = errors.New("requester cannot approve own request")
+)
+
 // MemoryStore is an in-process implementation of Store. All access is
 // guarded by a single RWMutex; this is fine for unit tests but not for
 // real concurrent throughput (the production backend is Postgres).
@@ -96,6 +124,10 @@ type MemoryStore struct {
 	batchJobs  map[string]domain.BatchJob
 	audits     []domain.AuditEvent
 	configs    map[string]int64 // tenantID -> version
+
+	overrideSettings  map[string]domain.TenantOverrideSettings
+	overrideRequests  map[string]domain.OverrideRequest
+	overrideAudit     map[string][]OverrideAuditEntry
 }
 
 // NewMemoryStore returns an empty MemoryStore.
@@ -109,7 +141,94 @@ func NewMemoryStore() *MemoryStore {
 		decisions:  make(map[string]domain.PricingDecision),
 		batchJobs:  make(map[string]domain.BatchJob),
 		configs:    make(map[string]int64),
+
+		overrideSettings: make(map[string]domain.TenantOverrideSettings),
+		overrideRequests: make(map[string]domain.OverrideRequest),
+		overrideAudit:    make(map[string][]OverrideAuditEntry),
 	}
+}
+
+// GetOverrideSettings returns the settings for a tenant, or defaults if unset.
+func (m *MemoryStore) GetOverrideSettings(ctx context.Context, tenantID string) (domain.TenantOverrideSettings, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if s, ok := m.overrideSettings[tenantID]; ok {
+		return s, nil
+	}
+	return domain.TenantOverrideSettings{
+		TenantID:          tenantID,
+		ThresholdYen:      domain.DefaultThresholdYen,
+		RequiredApprovals: domain.DefaultRequiredApprovals,
+		OverrideEnabled:   false,
+	}, nil
+}
+
+// UpsertOverrideSettings creates or updates the settings for a tenant.
+func (m *MemoryStore) UpsertOverrideSettings(ctx context.Context, s domain.TenantOverrideSettings) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.overrideSettings[s.TenantID] = s
+	return nil
+}
+
+// CreateOverrideRequest stores a new override request.
+func (m *MemoryStore) CreateOverrideRequest(ctx context.Context, r domain.OverrideRequest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.overrideRequests[r.ID] = r
+	return nil
+}
+
+// GetOverrideRequest returns an override request by id.
+func (m *MemoryStore) GetOverrideRequest(ctx context.Context, id string) (domain.OverrideRequest, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if r, ok := m.overrideRequests[id]; ok {
+		return r, nil
+	}
+	return domain.OverrideRequest{}, ErrOverrideNotFound
+}
+
+// ListOverrideRequests returns all override requests for a tenant.
+func (m *MemoryStore) ListOverrideRequests(ctx context.Context, tenantID string) ([]domain.OverrideRequest, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var results []domain.OverrideRequest
+	for _, r := range m.overrideRequests {
+		if r.TenantID == tenantID {
+			results = append(results, r)
+		}
+	}
+	return results, nil
+}
+
+// UpdateOverrideRequest updates an existing override request.
+func (m *MemoryStore) UpdateOverrideRequest(ctx context.Context, r domain.OverrideRequest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.overrideRequests[r.ID] = r
+	return nil
+}
+
+// AppendOverrideAudit appends an audit entry for an override action.
+func (m *MemoryStore) AppendOverrideAudit(ctx context.Context, requestID, action, actorID, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.overrideAudit[requestID] = append(m.overrideAudit[requestID], OverrideAuditEntry{
+		RequestID: requestID,
+		Action:    action,
+		ActorID:   actorID,
+		Reason:    reason,
+		At:        time.Now(),
+	})
+	return nil
+}
+
+// ListOverrideAudit returns all audit entries for an override request.
+func (m *MemoryStore) ListOverrideAudit(ctx context.Context, requestID string) ([]OverrideAuditEntry, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.overrideAudit[requestID], nil
 }
 
 // Close is a no-op for the in-memory store.

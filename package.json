@@ -1,0 +1,10 @@
+{
+  "name": "soma-scenario4",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build && rm -rf ../dist && cp -r dist ../dist",
+    "start": "bash start.sh",
+    "dev": "cd frontend && npm run dev"
+  }
+}

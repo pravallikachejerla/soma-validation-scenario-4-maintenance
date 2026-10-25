@@ -1,0 +1,6 @@
+{
+  "build": "npm install && npm run build",
+  "start": "STORAGE_BACKEND=memory LISTEN_ADDR=:8080 /tmp/api & npx vite preview --port 5173 --host 0.0.0.0",
+  "port": 5173,
+  "path": "/"
+}
