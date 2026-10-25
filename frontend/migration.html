@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SOMA Pricing — Migration &amp; Rollback</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>SOMA Evidence</h1>
+      <nav>
+        <a href="/index.html">Application</a>
+        <a href="/evidence.html">Evidence dashboard</a>
+        <a href="/test-report.html">Test report</a>
+        <a href="/verification.html">Verification steps</a>
+        <a href="/migration.html" class="active">Migration &amp; rollback</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <h2>Migration and rollback instructions</h2>
+
+      <section class="card">
+        <h3>Forward migration</h3>
+        <p>
+          The migration is embedded in <code>migrations/0001_init.sql</code> and is
+          idempotent (<code>CREATE TABLE IF NOT EXISTS</code>,
+          <code>ADD COLUMN IF NOT EXISTS</code>), so it is safe to re-run.
+        </p>
+        <ol>
+          <li>Back up the database before migrating.</li>
+          <li>Apply the migration:
+            <pre>go run ./cmd/migrate</pre>
+          </li>
+          <li>Seed the reference data (only needed for a fresh environment):
+            <pre>go run ./cmd/seed</pre>
+          </li>
+          <li>Restart the API and verify:
+            <pre>curl http://localhost:8080/healthz
+curl http://localhost:8080/api/v1/tenants/tenant-a</pre>
+          </li>
+          <li>
+            Confirm every existing tenant reports
+            <code>override_enabled = false</code> and
+            <code>override_threshold_yen = 0</code>. This is what makes the
+            migration backward compatible: existing tenant behaviour is
+            unchanged until the feature is explicitly enabled per tenant.
+          </li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h3>Enabling the feature for a tenant</h3>
+        <pre>curl -X PATCH http://localhost:8080/api/v1/tenants/tenant-a \
+  -H "Content-Type: application/json" \
+  -d '{"override_enabled": true, "override_threshold_yen": 3000000}'</pre>
+        <p>
+          The tenant's configured threshold supersedes the system default of
+          JPY 5,000,000. Setting <code>override_threshold_yen</code> to
+          <code>0</code> restores the default.
+        </p>
+      </section>
+
+      <section class="card">
+        <h3>Rollback</h3>
+        <p>
+          The feature can be disabled per tenant without a schema change —
+          this is the preferred rollback because it is immediate and loses
+          no data.
+        </p>
+        <ol>
+          <li>
+            Disable the feature for the affected tenant:
+            <pre>curl -X PATCH http://localhost:8080/api/v1/tenants/tenant-a \
+  -H "Content-Type: application/json" \
+  -d '{"override_enabled": false}'</pre>
+          </li>
+          <li>
+            Existing pricing behaviour is restored immediately: the public
+            pricing API never consulted the override workflow, so no
+            pricing result changes.
+          </li>
+          <li>
+            Full schema rollback (only if the override tables must be
+            removed entirely):
+            <pre>go run ./cmd/migrate --down</pre>
+            or, manually:
+            <pre>DROP TABLE IF EXISTS override_requests;
+ALTER TABLE tenants
+  DROP COLUMN IF EXISTS override_enabled,
+  DROP COLUMN IF EXISTS override_threshold_yen;</pre>
+          </li>
+          <li>
+            Audit events for override actions are retained after rollback —
+            the audit trail is append-only by design.
+          </li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h3>Backward-compatibility guarantees</h3>
+        <ul>
+          <li>The public pricing API (<code>POST /api/v1/pricing/quote</code>, <code>POST /api/v1/pricing/batch</code>) is unchanged — same request body, same response body, same status codes.</li>
+          <li>The duplicate-discount correction is a pure logic change inside the promotion resolver; no schema, no API, and no configuration change.</li>
+          <li>New tenants default to <code>override_enabled = false</code> and <code>override_threshold_yen = 0</code> (meaning: use the JPY 5,000,000 system default).</li>
+          <li>No existing column was retyped, renamed, or dropped.</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

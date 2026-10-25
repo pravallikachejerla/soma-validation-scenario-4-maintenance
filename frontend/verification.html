@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SOMA Pricing — Verification Steps</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>SOMA Evidence</h1>
+      <nav>
+        <a href="/index.html">Application</a>
+        <a href="/evidence.html">Evidence dashboard</a>
+        <a href="/test-report.html">Test report</a>
+        <a href="/verification.html" class="active">Verification steps</a>
+        <a href="/migration.html">Migration &amp; rollback</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <h2>Verification steps</h2>
+
+      <section class="card">
+        <h3>1. Original defect reproduction steps</h3>
+        <p>
+          The original defect: a promotion registered with two rule rows
+          for the same tenant and channel — one SKU-specific, one
+          channel-wildcard — was applied twice, giving the customer the
+          same discount twice.
+        </p>
+        <ol>
+          <li>Open the application at <a href="/index.html">/index.html</a>.</li>
+          <li>Navigate to the <strong>Promotions</strong> page.</li>
+          <li>Register a promotion with id <code>promo-repro</code>:
+            <ul>
+              <li>Type: percent, Value: 10, Channel: web, SKU: <code>SKU-00001</code>, Priority: 5</li>
+              <li>Valid from: 2026-01-01, Valid until: 2027-01-01</li>
+            </ul>
+          </li>
+          <li>Register the SAME promotion id <code>promo-repro</code> again with SKU empty (wildcard rule row).</li>
+          <li>Navigate to the <strong>Pricing simulator</strong> page.</li>
+          <li>Submit a quote for SKU <code>SKU-00001</code>, channel <code>web</code>, quantity 1.</li>
+          <li>
+            <strong>Before the fix:</strong> <code>promo-repro</code> appears twice in
+            <code>applied_promotion_ids</code> and the discount is applied twice.
+          </li>
+          <li>
+            <strong>After the fix:</strong> <code>promo-repro</code> appears exactly once in
+            <code>applied_promotion_ids</code> and the discount is applied once.
+          </li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h3>2. Corrected-behaviour verification steps</h3>
+        <ol>
+          <li>Open the application at <a href="/index.html">/index.html</a>.</li>
+          <li>Navigate to the <strong>Pricing simulator</strong> page.</li>
+          <li>Submit a quote for SKU <code>SKU-00001</code>, channel <code>web</code>, quantity 1.</li>
+          <li>Verify the response shows the expected final yen (e.g. 900 for a 10% discount on a 1000-yen base).</li>
+          <li>Verify <code>applied_promotion_ids</code> contains each promotion id exactly once.</li>
+          <li>Navigate to the <strong>Batch dashboard</strong> page.</li>
+          <li>Submit a batch with the same SKU and channel.</li>
+          <li>Verify the batch result agrees with the interactive result (same final yen).</li>
+          <li>Navigate to the <strong>Audit viewer</strong> page.</li>
+          <li>Verify that a <code>promotion.applied</code> audit event was recorded for the quote.</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h3>3. Manual-override feature verification steps</h3>
+        <ol>
+          <li>Open the application at <a href="/index.html">/index.html</a>.</li>
+          <li>Navigate to the <strong>Manual overrides</strong> page.</li>
+          <li>Verify the page shows tenant <code>tenant-a</code> with feature enabled and threshold JPY 3,000,000.</li>
+          <li>
+            <strong>Test: two approvals above threshold.</strong>
+            <ol>
+              <li>Set Override ¥ to 3,500,000 and enter a reason.</li>
+              <li>Click "Create override request". Verify status is "pending" and required approvals is 2.</li>
+              <li>As approver <code>tenant-a-approver</code>, enter a reason and click "Approve". Verify status is still "pending" (1/2).</li>
+              <li>As admin <code>tenant-a-admin</code>, enter a reason and click "Approve". Verify status is "approved" (2/2).</li>
+              <li>Click "Apply". Verify status is "applied".</li>
+            </ol>
+          </li>
+          <li>
+            <strong>Test: requester cannot approve own request.</strong>
+            <ol>
+              <li>Create a new override request as <code>tenant-a-requester</code>.</li>
+              <li>As the same requester, try to approve. Verify an error message appears.</li>
+            </ol>
+          </li>
+          <li>
+            <strong>Test: approval reason is mandatory.</strong>
+            <ol>
+              <li>Create a new override request.</li>
+              <li>As approver, click "Approve" without entering a reason. Verify an error message appears.</li>
+            </ol>
+          </li>
+          <li>
+            <strong>Test: one approval below threshold.</strong>
+            <ol>
+              <li>Set Override ¥ to 500 (below the 3,000,000 threshold).</li>
+              <li>Create the request. Verify required approvals is 1.</li>
+              <li>As approver, approve once. Verify status is "approved" (1/1).</li>
+            </ol>
+          </li>
+          <li>Navigate to the <strong>Evidence dashboard</strong> to see the full audit trail.</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h3>4. Test identities</h3>
+        <table class="data-table">
+          <thead>
+            <tr><th>Role</th><th>User ID</th><th>Tenant</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Requester</td><td><code>tenant-a-requester</code></td><td>tenant-a</td></tr>
+            <tr><td>Approver</td><td><code>tenant-a-approver</code></td><td>tenant-a</td></tr>
+            <tr><td>Administrator</td><td><code>tenant-a-admin</code></td><td>tenant-a</td></tr>
+          </tbody>
+        </table>
+        <p class="muted">
+          These identities are auto-seeded when the API starts with
+          <code>STORAGE_BACKEND=memory</code>. For Postgres deployments,
+          run <code>go run ./cmd/seed</code> after migration.
+        </p>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SOMA Pricing — Evidence Dashboard</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>SOMA Evidence</h1>
+      <nav>
+        <a href="/index.html">Application</a>
+        <a href="/evidence.html" class="active">Evidence dashboard</a>
+        <a href="/test-report.html">Test report</a>
+        <a href="/verification.html">Verification steps</a>
+        <a href="/migration.html">Migration &amp; rollback</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <h2>Evidence dashboard</h2>
+      <p class="muted">
+        Live evidence from the deployed API. The dashboard polls the
+        <code>/api/v1/audit</code> endpoint and groups events by action.
+      </p>
+
+      <section class="card">
+        <h3>Override workflow audit trail</h3>
+        <p class="muted">
+          Every override request, approval, rejection and final pricing
+          action is recorded. The counts below are computed from the
+          live audit log.
+        </p>
+        <div id="audit-summary" class="row">Loading…</div>
+      </section>
+
+      <section class="card">
+        <h3>Recent audit events</h3>
+        <table class="data-table" id="audit-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Action</th>
+              <th>Subject</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h3>Tenant configuration</h3>
+        <table class="data-table" id="tenant-table">
+          <thead>
+            <tr>
+              <th>Tenant</th>
+              <th>Feature enabled</th>
+              <th>Threshold (¥)</th>
+              <th>Effective threshold (¥)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+  <script>
+    const TENANT = "tenant-a";
+
+    async function loadAudit() {
+      const res = await fetch(`/api/v1/audit?tenant_id=${TENANT}&limit=200`);
+      const events = await res.json();
+      const counts = {};
+      for (const e of events) {
+        counts[e.action] = (counts[e.action] || 0) + 1;
+      }
+      const summary = document.getElementById("audit-summary");
+      summary.innerHTML = "";
+      const actions = Object.keys(counts).sort();
+      if (actions.length === 0) {
+        summary.innerHTML = '<p class="muted">No audit events yet. Create an override request to see evidence.</p>';
+      } else {
+        for (const a of actions) {
+          const div = document.createElement("div");
+          div.innerHTML = `<strong>${a}</strong>: ${counts[a]}`;
+          summary.appendChild(div);
+        }
+      }
+      const tbody = document.querySelector("#audit-table tbody");
+      tbody.innerHTML = "";
+      for (const e of events.slice(0, 50)) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${e.created_at}</td><td>${e.action}</td><td><code>${e.subject}</code></td><td>${e.detail}</td>`;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function loadTenants() {
+      const res = await fetch("/api/v1/tenants");
+      // The list endpoint may not exist; fall back to known tenants.
+      let tenants = [];
+      try {
+        tenants = await res.json();
+      } catch (_) {
+        tenants = ["tenant-a", "tenant-b", "tenant-c"];
+      }
+      const tbody = document.querySelector("#tenant-table tbody");
+      tbody.innerHTML = "";
+      for (const t of (Array.isArray(tenants) ? tenants : ["tenant-a", "tenant-b", "tenant-c"])) {
+        const id = typeof t === "string" ? t : t.id;
+        const r = await fetch(`/api/v1/tenants/${id}`);
+        if (!r.ok) continue;
+        const data = await r.json();
+        const effective = data.override_threshold_yen > 0 ? data.override_threshold_yen : 5000000;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td><code>${data.id}</code></td><td>${data.override_enabled ? "yes" : "no"}</td><td>${data.override_threshold_yen.toLocaleString()}</td><td>${effective.toLocaleString()}</td>`;
+        tbody.appendChild(tr);
+      }
+    }
+
+    loadAudit();
+    loadTenants();
+    setInterval(loadAudit, 5000);
+  </script>
+</body>
+</html>

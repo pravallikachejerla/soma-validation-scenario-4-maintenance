@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SOMA Pricing — Test Report</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>SOMA Evidence</h1>
+      <nav>
+        <a href="/index.html">Application</a>
+        <a href="/evidence.html">Evidence dashboard</a>
+        <a href="/test-report.html" class="active">Test report</a>
+        <a href="/verification.html">Verification steps</a>
+        <a href="/migration.html">Migration &amp; rollback</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <h2>Test report</h2>
+      <p class="muted">
+        Summary of the public test suite. All tests pass on the
+        corrected and enhanced build.
+      </p>
+
+      <section class="card">
+        <h3>Public test suite</h3>
+        <p>Run with: <code>go test ./tests/public/... -v</code></p>
+        <table class="data-table">
+          <thead>
+            <tr><th>Test</th><th>Coverage</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>TestHealthz</code></td><td>Health endpoint returns 200 + ok</td><td>PASS</td></tr>
+            <tr><td><code>TestVersion</code></td><td>Version endpoint returns build info</td><td>PASS</td></tr>
+            <tr><td><code>TestInteractivePricing_RoundTrip</code></td><td>Interactive quote returns expected final yen</td><td>PASS</td></tr>
+            <tr><td><code>TestInteractiveAndBatchAgree</code></td><td>Interactive and batch paths agree on final yen</td><td>PASS</td></tr>
+            <tr><td><code>TestPromotion_InclusiveEndTime</code></td><td>Promotion active at end-of-window timestamp</td><td>PASS</td></tr>
+            <tr><td><code>TestPromotion_NoOverlap</code></td><td>Single wildcard promotion applied once</td><td>PASS</td></tr>
+            <tr><td><code>TestBatch_ProducesStableHash</code></td><td>Batch result hash is stable across runs</td><td>PASS</td></tr>
+            <tr><td><code>TestBatch_EmptyInput</code></td><td>Batch with empty input returns empty result</td><td>PASS</td></tr>
+            <tr><td><code>TestDuplicateDiscount_InteractivePath</code></td><td>Overlapping promotion applied once (interactive)</td><td>PASS</td></tr>
+            <tr><td><code>TestDuplicateDiscount_BatchPath</code></td><td>Overlapping promotion applied once (batch)</td><td>PASS</td></tr>
+            <tr><td><code>TestDuplicateDiscount_InteractiveAndBatchAgree</code></td><td>Interactive/batch parity with overlap</td><td>PASS</td></tr>
+            <tr><td><code>TestDuplicateDiscount_WildcardOnly</code></td><td>Wildcard-only promotion applied once</td><td>PASS</td></tr>
+            <tr><td><code>TestDuplicateDiscount_RepeatedPath</code></td><td>Same id via SKU + wildcard paths applied once</td><td>PASS</td></tr>
+            <tr><td><code>TestDuplicateDiscount_OverlappingRulesDifferentPromos</code></td><td>Different ids stacked correctly</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_DefaultThresholdIs5MillionYen</code></td><td>System default is JPY 5,000,000</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_TenantSpecificThresholdSupersedesDefault</code></td><td>Tenant threshold supersedes default</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_FeatureDisabledByDefault</code></td><td>Feature off by default</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_RequiresTwoApprovalsAtThreshold</code></td><td>Two approvals at or above threshold</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_OneApprovalBelowThreshold</code></td><td>One approval below threshold</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_RequesterCannotApproveOwnRequest</code></td><td>Self-approval rejected</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_ApprovalReasonMandatory</code></td><td>Empty/whitespace reason rejected</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_RejectionTerminatesRequest</code></td><td>Single rejection terminates request</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_AuditCompleteness</code></td><td>All actions audited</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_BackwardCompatibleDefault</code></td><td>Legacy tenant unaffected</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_ApplyRequiresApprovedState</code></td><td>Apply only after approval</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_DuplicateApproverRejected</code></td><td>Same approver cannot decide twice</td><td>PASS</td></tr>
+            <tr><td><code>TestOverride_TimeFieldsPopulated</code></td><td>created_at and updated_at set</td><td>PASS</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h3>Coverage by requirement</h3>
+        <table class="data-table">
+          <thead>
+            <tr><th>Requirement</th><th>Tests</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Override threshold configurable per tenant</td><td>TestOverride_TenantSpecificThresholdSupersedesDefault, TestOverride_DefaultThresholdIs5MillionYen</td></tr>
+            <tr><td>Default threshold JPY 5,000,000</td><td>TestOverride_DefaultThresholdIs5MillionYen</td></tr>
+            <tr><td>Existing tenant behaviour unchanged until enabled</td><td>TestOverride_FeatureDisabledByDefault, TestOverride_BackwardCompatibleDefault</td></tr>
+            <tr><td>Two approvals above threshold</td><td>TestOverride_RequiresTwoApprovalsAtThreshold</td></tr>
+            <tr><td>Requester cannot approve own request</td><td>TestOverride_RequesterCannotApproveOwnRequest</td></tr>
+            <tr><td>Approval reason mandatory</td><td>TestOverride_ApprovalReasonMandatory</td></tr>
+            <tr><td>Every action audited</td><td>TestOverride_AuditCompleteness</td></tr>
+            <tr><td>Public pricing API unchanged</td><td>TestInteractivePricing_RoundTrip, TestInteractiveAndBatchAgree</td></tr>
+            <tr><td>Backward-compatible migration</td><td>TestOverride_BackwardCompatibleDefault</td></tr>
+            <tr><td>Duplicate-discount correction (interactive + batch)</td><td>TestDuplicateDiscount_InteractivePath, TestDuplicateDiscount_BatchPath, TestDuplicateDiscount_InteractiveAndBatchAgree</td></tr>
+            <tr><td>Overlapping-rule, wildcard, repeated-path</td><td>TestDuplicateDiscount_OverlappingRulesDifferentPromos, TestDuplicateDiscount_WildcardOnly, TestDuplicateDiscount_RepeatedPath</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
