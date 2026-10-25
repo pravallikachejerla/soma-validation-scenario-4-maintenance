@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   DEFAULT_TENANT,
+  OverrideApproval,
   OverrideRequest,
   createOverride,
   decideOverride,
@@ -265,7 +266,7 @@ export default function OverridesPage() {
                   {o.approvals.length === 0
                     ? "—"
                     : o.approvals
-                        .map((a) => `${a.approver_id}:${a.decision}`)
+                        .map((a: OverrideApproval) => `${a.approver_id}:${a.decision}`)
                         .join(", ")}
                 </td>
                 <td>{o.sku}</td>

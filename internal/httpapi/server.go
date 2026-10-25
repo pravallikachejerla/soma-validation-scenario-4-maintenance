@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,10 +25,11 @@ import (
 
 // Server bundles the HTTP router and its dependencies.
 type Server struct {
-	Mux     *http.ServeMux
-	Pricing *application.PricingService
-	Admin   *application.AdminService
-	Store   storage.Store
+	Mux      *http.ServeMux
+	Pricing  *application.PricingService
+	Admin    *application.AdminService
+	Override *application.OverrideService
+	Store    storage.Store
 	Logger  *observability.Logger
 	Metrics *observability.Metrics
 	Build   BuildInfo
@@ -63,6 +65,9 @@ func (s *Server) routes() {
 	s.Mux.HandleFunc("/api/v1/audit", s.withCtx(s.handleAudit))
 	s.Mux.HandleFunc("/api/v1/batch_jobs/", s.withCtx(s.handleBatchJob))
 	s.Mux.HandleFunc("/api/v1/admin/seed", s.withCtx(s.handleAdminSeed))
+	s.Mux.HandleFunc("/api/v1/tenants/", s.withCtx(s.handleTenantItem))
+	s.Mux.HandleFunc("/api/v1/overrides", s.withCtx(s.handleOverrides))
+	s.Mux.HandleFunc("/api/v1/overrides/", s.withCtx(s.handleOverrideItem))
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -319,4 +324,167 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// --- Tenant handlers ---
+
+func (s *Server) handleTenantItem(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Path[len("/api/v1/tenants/"):]
+	if id == "" {
+		http.Error(w, "tenant id required", http.StatusBadRequest)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		t, err := s.Store.GetTenant(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, t)
+	case http.MethodPatch:
+		var p domain.Tenant
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		p.ID = id
+		if err := s.Store.UpsertTenant(r.Context(), p); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, p)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// --- Override handlers ---
+
+func (s *Server) handleOverrides(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		tenant := r.URL.Query().Get("tenant_id")
+		if tenant == "" {
+			http.Error(w, "tenant_id required", http.StatusBadRequest)
+			return
+		}
+		limit := 50
+		if v := r.URL.Query().Get("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				limit = n
+			}
+		}
+		out, err := s.Override.ListOverrides(r.Context(), tenant, limit)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	case http.MethodPost:
+		var in struct {
+			TenantID    string `json:"tenant_id"`
+			RequesterID string `json:"requester_id"`
+			SKU         string `json:"sku"`
+			Channel     string `json:"channel"`
+			CustomerID  string `json:"customer_id"`
+			OriginalYen int64  `json:"original_yen"`
+			OverrideYen int64  `json:"override_yen"`
+			Reason      string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		req, err := s.Override.CreateOverrideRequest(r.Context(),
+			in.TenantID, in.RequesterID, in.SKU, in.Channel, in.CustomerID,
+			in.OriginalYen, in.OverrideYen, in.Reason)
+		if err != nil {
+			writeOverrideError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, req)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleOverrideItem(w http.ResponseWriter, r *http.Request) {
+	rest := r.URL.Path[len("/api/v1/overrides/"):]
+	if rest == "" {
+		http.Error(w, "override id required", http.StatusBadRequest)
+		return
+	}
+	parts := strings.SplitN(rest, "/", 2)
+	id := parts[0]
+	action := ""
+	if len(parts) == 2 {
+		action = parts[1]
+	}
+	if r.Method == http.MethodGet && action == "" {
+		req, err := s.Override.GetOverride(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, req)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var in struct {
+		ApproverID string `json:"approver_id"`
+		Reason     string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	var (
+		req domain.OverrideRequest
+		err error
+	)
+	switch action {
+	case "approve":
+		req, err = s.Override.ApproveOverride(r.Context(), id, in.ApproverID, in.Reason)
+	case "reject":
+		req, err = s.Override.RejectOverride(r.Context(), id, in.ApproverID, in.Reason)
+	case "apply":
+		req, err = s.Override.ApplyOverride(r.Context(), id)
+	default:
+		http.Error(w, "unknown action", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		writeOverrideError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, req)
+}
+
+func writeOverrideError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, application.ErrOverrideFeatureDisabled):
+		http.Error(w, err.Error(), http.StatusForbidden)
+	case errors.Is(err, application.ErrOverrideNotFound):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, application.ErrOverrideSelfApproval),
+		errors.Is(err, application.ErrOverrideAlreadyDecided),
+		errors.Is(err, application.ErrOverrideReasonMissing),
+		errors.Is(err, application.ErrOverrideApproverMissing),
+		errors.Is(err, application.ErrOverrideThresholdZero):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }

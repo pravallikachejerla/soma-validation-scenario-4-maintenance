@@ -122,3 +122,98 @@ export async function listAudit(tenant: string, limit = 50): Promise<AuditEvent[
 }
 
 export const DEFAULT_TENANT = "tenant-a";
+
+export interface Tenant {
+  id: string;
+  name: string;
+  created_at: string;
+  override_threshold_yen: number;
+  override_enabled: boolean;
+}
+
+export interface OverrideApproval {
+  approver_id: string;
+  decision: "approve" | "reject";
+  reason: string;
+  at: string;
+}
+
+export interface OverrideRequest {
+  id: string;
+  tenant_id: string;
+  requester_id: string;
+  sku: string;
+  channel: string;
+  customer_id: string;
+  original_yen: number;
+  override_yen: number;
+  reason: string;
+  status: "pending" | "approved" | "rejected" | "cancelled" | "applied";
+  approvals: OverrideApproval[];
+  required_approvals: number;
+  created_at: string;
+  updated_at: string;
+  applied_at?: string;
+}
+
+export interface CreateOverrideInput {
+  tenant_id: string;
+  requester_id: string;
+  sku: string;
+  channel: string;
+  customer_id: string;
+  original_yen: number;
+  override_yen: number;
+  reason: string;
+}
+
+export interface DecideOverrideInput {
+  approver_id: string;
+  reason: string;
+}
+
+export async function getTenant(tenant: string): Promise<Tenant> {
+  return jsonOrThrow<Tenant>(
+    await fetch(`/api/v1/tenants/${encodeURIComponent(tenant)}`)
+  );
+}
+
+export async function patchTenant(tenant: string, p: Partial<Tenant>): Promise<Tenant> {
+  return jsonOrThrow<Tenant>(
+    await fetch(`/api/v1/tenants/${encodeURIComponent(tenant)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(p),
+    })
+  );
+}
+
+export async function listOverrides(tenant: string, limit = 50): Promise<OverrideRequest[]> {
+  return jsonOrThrow<OverrideRequest[]>(
+    await fetch(`/api/v1/overrides?tenant_id=${encodeURIComponent(tenant)}&limit=${limit}`)
+  );
+}
+
+export async function createOverride(input: CreateOverrideInput): Promise<OverrideRequest> {
+  return jsonOrThrow<OverrideRequest>(
+    await fetch("/api/v1/overrides", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+  );
+}
+
+export async function decideOverride(
+  id: string,
+  action: "approve" | "reject" | "apply",
+  input: DecideOverrideInput,
+): Promise<OverrideRequest> {
+  return jsonOrThrow<OverrideRequest>(
+    await fetch(`/api/v1/overrides/${encodeURIComponent(id)}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+  );
+}

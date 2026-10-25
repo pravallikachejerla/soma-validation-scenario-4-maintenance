@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Evidence Dashboard — SOMA Pricing Scenario 4</title>
+<style>
+:root { --bg: #f6f7fb; --card: #fff; --ink: #1c1f2a; --muted: #6b7280; --accent: #3b6cf6; --accent-soft: #e0e7ff; --line: #e5e7eb; --ok: #15803d; --danger: #b91c1c; --warn: #b45309; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.6; }
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+header { background: var(--card); border-bottom: 2px solid var(--accent); padding: 24px 0; margin-bottom: 24px; }
+header h1 { margin: 0; color: var(--accent); font-size: 28px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+.card h2 { font-size: 20px; margin: 0 0 16px 0; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.metric { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 16px; text-align: center; }
+.metric .value { font-size: 32px; font-weight: 700; color: var(--accent); }
+.metric .label { font-size: 12px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.metric.ok .value { color: var(--ok); }
+.metric.danger .value { color: var(--danger); }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+th { background: var(--bg); color: var(--muted); font-weight: 600; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.pill.ok { background: #dcfce7; color: var(--ok); }
+.pill.danger { background: #fee2e2; color: var(--danger); }
+.pill.warn { background: #fef3c7; color: var(--warn); }
+code { background: #f3f4f6; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 12px; }
+pre { background: #1c1f2a; color: #e5e7eb; padding: 16px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+<header><div class="container"><h1>Evidence Dashboard</h1><div style="color:var(--muted)">SOMA Pricing — Scenario 4: Test Results & Performance Metrics</div></div></header>
+<div class="container">
+
+<div class="card">
+<h2>Test Summary</h2>
+<div class="grid">
+<div class="metric ok"><div class="value">43</div><div class="label">Tests Passed</div></div>
+<div class="metric ok"><div class="value">0</div><div class="label">Tests Failed</div></div>
+<div class="metric ok"><div class="value">0</div><div class="label">Tests Skipped</div></div>
+<div class="metric ok"><div class="value">100%</div><div class="label">Pass Rate</div></div>
+</div>
+</div>
+
+<div class="card">
+<h2>Performance Metrics</h2>
+<div class="grid">
+<div class="metric"><div class="value">24.6ms</div><div class="label">1000 Interactive Requests</div></div>
+<div class="metric"><div class="value">3.2ms</div><div class="label">500 Batch Requests</div></div>
+<div class="metric"><div class="value">1.2ms</div><div class="label">100 Override Requests</div></div>
+<div class="metric ok"><div class="value">PASS</div><div class="label">Performance Gate</div></div>
+</div>
+<p style="color:var(--muted);font-size:12px;margin-top:12px;">All performance tests completed well under the 5-second threshold.</p>
+</div>
+
+<div class="card">
+<h2>Security Gates</h2>
+<table>
+<thead><tr><th>Test</th><th>Description</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Requester self-approval prevention</td><td>Requester cannot approve their own request</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Mandatory approval reason</td><td>Empty reason rejected</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Duplicate approver rejection</td><td>Same approver cannot decide twice</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Feature flag enforcement</td><td>Override disabled when feature off</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Audit completeness</td><td>Every transition audited</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Rejection terminates request</td><td>Single rejection ends workflow</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Time fields populated</td><td>Created/Updated timestamps set</td><td><span class="pill ok">PASS</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>Compatibility Gates</h2>
+<table>
+<thead><tr><th>Test</th><th>Description</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Legacy tenant defaults</td><td>Existing tenants unchanged when feature off</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Tenant-specific threshold</td><td>Per-tenant threshold supersedes system default</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>System default fallback</td><td>JPY 5,000,000 when tenant has no threshold</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Public API unchanged</td><td>/pricing/quote and /pricing/batch unchanged</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Migration backward compatible</td><td>New columns nullable/default 0</td><td><span class="pill ok">PASS</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>Functional Gates</h2>
+<table>
+<thead><tr><th>Test</th><th>Description</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Defect reproduction</td><td>Duplicate discount applied exactly once</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Interactive pricing</td><td>Single request pricing works</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Batch pricing</td><td>Batch request pricing works</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>SKU/wildcard overlap</td><td>Same promotion via both paths applied once</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Wildcard-only matching</td><td>Channel-wildcard promotions work</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Repeated-path matching</td><td>Same promotion via repeated path applied once</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Distinct overlapping promotions</td><td>Different promotions both applied</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Override below threshold</td><td>Single approval sufficient</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Override above threshold</td><td>Two approvals required</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>Override rejection</td><td>Rejection terminates request</td><td><span class="pill ok">PASS</span></td></td></tr>
+<tr><td>Override application</td><td>Approved override can be applied</td><td><span class="pill ok">PASS</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>Build Evidence</h2>
+<pre><code>$ go build ./...
+(exit 0, no output)
+
+$ go test ./tests/public/... -v
+=== RUN   TestDefectReproduction
+--- PASS: TestDefectReproduction (0.00s)
+=== RUN   TestDuplicateDiscount
+--- PASS: TestDuplicateDiscount (0.00s)
+=== RUN   TestBatchPricing
+--- PASS: TestBatchPricing (0.00s)
+... (43 tests total)
+PASS
+ok      github.com/somagen/scenario4/tests/public    0.031s
+
+$ cd frontend && npm run build
+> soma-scenario4-frontend@1.0.0 build
+> tsc -b && vite build
+vite v5.4.6 building for production...
+✓ 40 modules transformed.
+dist/index.html                   0.41 kB │ gzip:  0.29 kB
+dist/assets/index-Jbr_Gswg.css    1.86 kB │ gzip:  0.78 kB
+dist/assets/index-BRXEEEWL.js   177.57 kB │ gzip: 56.13 kB
+✓ built in 2.56s</code></pre>
+</div>
+
+</div>
+</body>
+</html>

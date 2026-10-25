@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/somagen/scenario4/internal/application"
+	"github.com/somagen/scenario4/internal/domain"
 	"github.com/somagen/scenario4/internal/httpapi"
 	"github.com/somagen/scenario4/internal/observability"
 	"github.com/somagen/scenario4/internal/storage"
@@ -36,6 +37,17 @@ func main() {
 	var store storage.Store
 	if os.Getenv("STORAGE_BACKEND") == "memory" {
 		store = storage.NewMemoryStore()
+		// Auto-seed tenants with the override feature enabled so the
+		// override workflow is exercisable in the sandbox. In production
+		// the feature flag defaults to FALSE and is enabled per-tenant.
+		for _, tid := range []string{"tenant-a", "tenant-b", "tenant-c"} {
+			_ = store.UpsertTenant(context.Background(), domain.Tenant{
+				ID:                tid,
+				Name:              "Synthetic " + tid,
+				OverrideEnabled:   true,
+				OverrideThreshold: 0,
+			})
+		}
 	} else {
 		ps, err := storage.NewPostgresStore(ctx, dsn)
 		if err != nil {
@@ -51,13 +63,15 @@ func main() {
 	metrics := observability.NewMetrics()
 	ps := application.NewPricingService(store, logger, metrics)
 	as := application.NewAdminService(store, 42)
+	overrideSvc := application.NewOverrideService(store, logger)
 
 	srv := &httpapi.Server{
-		Pricing: ps,
-		Admin:   as,
-		Store:   store,
-		Logger:  logger,
-		Metrics: metrics,
+		Pricing:  ps,
+		Admin:    as,
+		Override: overrideSvc,
+		Store:    store,
+		Logger:   logger,
+		Metrics:  metrics,
 		Build: httpapi.BuildInfo{
 			Commit:  commit,
 			BuiltAt: time.Now().UTC().Format(time.RFC3339),
