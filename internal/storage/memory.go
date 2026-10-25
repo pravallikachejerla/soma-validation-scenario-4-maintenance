@@ -28,6 +28,7 @@ type Store interface {
 	BatchJobRepo
 	AuditRepo
 	ConfigRepo
+	OverrideRepo
 	Close(ctx context.Context) error
 }
 
@@ -81,6 +82,16 @@ type ConfigRepo interface {
 	BumpConfigVersion(ctx context.Context, tenantID string) (int64, error)
 }
 
+// OverrideRepo is the persistence boundary for manual price-override
+// requests. The same interface is satisfied by both the in-memory and
+// the PostgreSQL backends.
+type OverrideRepo interface {
+	CreateOverrideRequest(ctx context.Context, r domain.OverrideRequest) error
+	UpdateOverrideRequest(ctx context.Context, r domain.OverrideRequest) error
+	GetOverrideRequest(ctx context.Context, id string) (domain.OverrideRequest, error)
+	ListOverrideRequests(ctx context.Context, tenantID string, limit int) ([]domain.OverrideRequest, error)
+}
+
 // MemoryStore is an in-process implementation of Store. All access is
 // guarded by a single RWMutex; this is fine for unit tests but not for
 // real concurrent throughput (the production backend is Postgres).
@@ -96,6 +107,7 @@ type MemoryStore struct {
 	batchJobs  map[string]domain.BatchJob
 	audits     []domain.AuditEvent
 	configs    map[string]int64 // tenantID -> version
+	overrides  map[string]domain.OverrideRequest
 }
 
 // NewMemoryStore returns an empty MemoryStore.
@@ -109,6 +121,7 @@ func NewMemoryStore() *MemoryStore {
 		decisions:  make(map[string]domain.PricingDecision),
 		batchJobs:  make(map[string]domain.BatchJob),
 		configs:    make(map[string]int64),
+		overrides:  make(map[string]domain.OverrideRequest),
 	}
 }
 
@@ -374,6 +387,50 @@ func (s *MemoryStore) BumpConfigVersion(ctx context.Context, tenantID string) (i
 	defer s.mu.Unlock()
 	s.configs[tenantID]++
 	return s.configs[tenantID], nil
+}
+
+// Override request storage (in-memory).
+
+func (s *MemoryStore) CreateOverrideRequest(ctx context.Context, r domain.OverrideRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.overrides[r.ID] = r
+	return nil
+}
+
+func (s *MemoryStore) UpdateOverrideRequest(ctx context.Context, r domain.OverrideRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.overrides[r.ID]; !ok {
+		return ErrNotFound
+	}
+	s.overrides[r.ID] = r
+	return nil
+}
+
+func (s *MemoryStore) GetOverrideRequest(ctx context.Context, id string) (domain.OverrideRequest, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	r, ok := s.overrides[id]
+	if !ok {
+		return domain.OverrideRequest{}, ErrNotFound
+	}
+	return r, nil
+}
+
+func (s *MemoryStore) ListOverrideRequests(ctx context.Context, tenantID string, limit int) ([]domain.OverrideRequest, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]domain.OverrideRequest, 0)
+	for _, r := range s.overrides {
+		if tenantID == "" || r.TenantID == tenantID {
+			out = append(out, r)
+		}
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 // ErrNotFound is returned by memory store lookups that miss.

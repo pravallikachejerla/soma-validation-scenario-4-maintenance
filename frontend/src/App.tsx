@@ -4,6 +4,7 @@ import PromotionEditorPage from "./pages/PromotionEditor";
 import PricingSimulatorPage from "./pages/PricingSimulator";
 import BatchDashboardPage from "./pages/BatchDashboard";
 import AuditViewerPage from "./pages/AuditViewer";
+import OverridesPage from "./pages/Overrides";
 
 export default function App() {
   return (
@@ -23,6 +24,9 @@ export default function App() {
           <NavLink to="/batch" className={({ isActive }) => (isActive ? "active" : "")}>
             Batch dashboard
           </NavLink>
+          <NavLink to="/overrides" className={({ isActive }) => (isActive ? "active" : "")}>
+            Manual overrides
+          </NavLink>
           <NavLink to="/audit" className={({ isActive }) => (isActive ? "active" : "")}>
             Audit viewer
           </NavLink>
@@ -35,6 +39,7 @@ export default function App() {
           <Route path="/promotions" element={<PromotionEditorPage />} />
           <Route path="/simulator" element={<PricingSimulatorPage />} />
           <Route path="/batch" element={<BatchDashboardPage />} />
+          <Route path="/overrides" element={<OverridesPage />} />
           <Route path="/audit" element={<AuditViewerPage />} />
         </Routes>
       </main>

@@ -46,6 +46,39 @@ export interface AuditEvent {
   created_at: string;
 }
 
+export interface Tenant {
+  id: string;
+  name: string;
+  created_at: string;
+  override_threshold_yen: number;
+  override_enabled: boolean;
+}
+
+export interface OverrideApproval {
+  approver_id: string;
+  decision: "approve" | "reject";
+  reason: string;
+  at: string;
+}
+
+export interface OverrideRequest {
+  id: string;
+  tenant_id: string;
+  requester_id: string;
+  sku: string;
+  channel: string;
+  customer_id: string;
+  original_yen: number;
+  override_yen: number;
+  reason: string;
+  status: "pending" | "approved" | "rejected" | "cancelled" | "applied";
+  approvals: OverrideApproval[];
+  required_approvals: number;
+  created_at: string;
+  updated_at: string;
+  applied_at?: string;
+}
+
 async function jsonOrThrow<T>(r: Response): Promise<T> {
   if (!r.ok) {
     const text = await r.text();
@@ -118,6 +151,62 @@ export async function runBatch(tenant: string, requests: PricingRequest[]): Prom
 export async function listAudit(tenant: string, limit = 50): Promise<AuditEvent[]> {
   return jsonOrThrow<AuditEvent[]>(
     await fetch(`/api/v1/audit?tenant_id=${encodeURIComponent(tenant)}&limit=${limit}`)
+  );
+}
+
+export async function getTenant(id: string): Promise<Tenant> {
+  return jsonOrThrow<Tenant>(await fetch(`/api/v1/tenants/${encodeURIComponent(id)}`));
+}
+
+export async function patchTenant(
+  id: string,
+  body: { override_enabled?: boolean; override_threshold_yen?: number }
+): Promise<Tenant> {
+  return jsonOrThrow<Tenant>(
+    await fetch(`/api/v1/tenants/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  );
+}
+
+export async function listOverrides(tenant: string, limit = 50): Promise<OverrideRequest[]> {
+  return jsonOrThrow<OverrideRequest[]>(
+    await fetch(`/api/v1/overrides?tenant_id=${encodeURIComponent(tenant)}&limit=${limit}`)
+  );
+}
+
+export async function createOverride(body: {
+  tenant_id: string;
+  requester_id: string;
+  sku: string;
+  channel: string;
+  customer_id: string;
+  original_yen: number;
+  override_yen: number;
+  reason: string;
+}): Promise<OverrideRequest> {
+  return jsonOrThrow<OverrideRequest>(
+    await fetch("/api/v1/overrides", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  );
+}
+
+export async function decideOverride(
+  id: string,
+  action: "approve" | "reject" | "apply",
+  body: { approver_id: string; reason: string }
+): Promise<OverrideRequest> {
+  return jsonOrThrow<OverrideRequest>(
+    await fetch(`/api/v1/overrides/${encodeURIComponent(id)}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
   );
 }
 

@@ -88,3 +88,34 @@ CREATE TABLE IF NOT EXISTS config_versions (
     tenant_id   TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
     version     BIGINT NOT NULL DEFAULT 1
 );
+
+-- Migration 0002: manual price-override approval workflow.
+-- Backward compatible: existing tenants get override_enabled = false
+-- and override_threshold_yen = 0 (which means "use the system default
+-- of JPY 5,000,000"). Existing tenant behaviour is unchanged until the
+-- feature is explicitly enabled per tenant.
+
+ALTER TABLE tenants
+    ADD COLUMN IF NOT EXISTS override_enabled        BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS override_threshold_yen  BIGINT  NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS override_requests (
+    id              TEXT PRIMARY KEY,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    requester_id    TEXT NOT NULL,
+    sku             TEXT NOT NULL,
+    channel         TEXT NOT NULL,
+    customer_id     TEXT NOT NULL,
+    original_yen    BIGINT NOT NULL,
+    override_yen    BIGINT NOT NULL,
+    reason          TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    approvals       JSONB NOT NULL DEFAULT '[]'::jsonb,
+    required_count  INTEGER NOT NULL DEFAULT 1,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    applied_at      TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS override_requests_tenant_idx
+    ON override_requests (tenant_id, created_at DESC);

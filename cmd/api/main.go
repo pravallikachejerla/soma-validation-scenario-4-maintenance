@@ -51,13 +51,15 @@ func main() {
 	metrics := observability.NewMetrics()
 	ps := application.NewPricingService(store, logger, metrics)
 	as := application.NewAdminService(store, 42)
+	osvc := application.NewOverrideService(store, logger)
 
 	srv := &httpapi.Server{
-		Pricing: ps,
-		Admin:   as,
-		Store:   store,
-		Logger:  logger,
-		Metrics: metrics,
+		Pricing:  ps,
+		Admin:    as,
+		Override: osvc,
+		Store:    store,
+		Logger:   logger,
+		Metrics:  metrics,
 		Build: httpapi.BuildInfo{
 			Commit:  commit,
 			BuiltAt: time.Now().UTC().Format(time.RFC3339),
