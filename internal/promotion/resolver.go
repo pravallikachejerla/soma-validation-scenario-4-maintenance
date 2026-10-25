@@ -59,7 +59,19 @@ func Apply(candidates []domain.Promotion, base money.Money, quantity int64, requ
 	// most once; if the same id is visible via both the SKU-specific
 	// and the channel-wildcard rule rows, the storage layer will return
 	// it twice and this loop will apply it twice.
+	//
+	// Defect fix: enforce at-most-once application at the final common
+	// resolution point. A `seen` set keyed by promotion id ensures that
+	// the first rule row for a given id wins; subsequent rows for the
+	// same id are skipped. This is the last line of defence against
+	// duplicate discounts regardless of how the storage layer returns
+	// candidates.
+	seen := make(map[string]struct{}, len(ordered))
 	for _, p := range ordered {
+		if _, ok := seen[p.ID]; ok {
+			continue
+		}
+		seen[p.ID] = struct{}{}
 		if !p.IsActiveAt(at) {
 			continue
 		}
