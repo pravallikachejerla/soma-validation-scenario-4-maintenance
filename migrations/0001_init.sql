@@ -4,7 +4,9 @@
 CREATE TABLE IF NOT EXISTS tenants (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    override_threshold_yen BIGINT NOT NULL DEFAULT 0,
+    override_enabled       BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -88,3 +90,24 @@ CREATE TABLE IF NOT EXISTS config_versions (
     tenant_id   TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
     version     BIGINT NOT NULL DEFAULT 1
 );
+
+CREATE TABLE IF NOT EXISTS override_requests (
+    id            TEXT PRIMARY KEY,
+    tenant_id     TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    requester_id  TEXT NOT NULL,
+    sku           TEXT NOT NULL,
+    channel       TEXT NOT NULL,
+    customer_id   TEXT NOT NULL,
+    original_yen  BIGINT NOT NULL,
+    override_yen  BIGINT NOT NULL,
+    reason        TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    approvals     JSONB NOT NULL DEFAULT '[]'::jsonb,
+    required_approvals INTEGER NOT NULL DEFAULT 1,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    applied_at    TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS override_requests_tenant_idx
+    ON override_requests (tenant_id, created_at DESC);

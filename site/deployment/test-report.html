@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Report — SOMA Pricing Scenario 4</title>
+<style>
+:root { --bg: #f6f7fb; --card: #fff; --ink: #1c1f2a; --muted: #6b7280; --accent: #3b6cf6; --line: #e5e7eb; --ok: #15803d; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.6; }
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+header { background: var(--card); border-bottom: 2px solid var(--accent); padding: 24px 0; margin-bottom: 24px; }
+header h1 { margin: 0; color: var(--accent); font-size: 28px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+.card h2 { font-size: 20px; margin: 0 0 16px 0; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+th { background: var(--bg); color: var(--muted); font-weight: 600; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.pill.ok { background: #dcfce7; color: var(--ok); }
+code { background: #f3f4f6; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+<header><div class="container"><h1>Test Report</h1><div style="color:var(--muted)">SOMA Pricing — Scenario 4: Detailed Test Results</div></div></header>
+<div class="container">
+
+<div class="card">
+<h2>Test Suite: tests/public</h2>
+<p><strong>Package:</strong> <code>github.com/somagen/scenario4/tests/public</code></p>
+<p><strong>Result:</strong> <span class="pill ok">ALL PASS</span> · 43 tests · 0 failures · 0 skipped · 0.031s</p>
+</div>
+
+<div class="card">
+<h2>Defect Correction Tests</h2>
+<table>
+<thead><tr><th>Test</th><th>File</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>TestDefectReproduction</td><td><code>defect_reproduction_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestDuplicateDiscount</td><td><code>duplicate_discount_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestInteractivePricing</td><td><code>pricing_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestBatchPricing</td><td><code>batch_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestPromotionOverlap</td><td><code>promotion_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestWildcardMatching</td><td><code>promotion_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestRepeatedPathMatching</td><td><code>promotion_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>Override Workflow Tests</h2>
+<table>
+<thead><tr><th>Test</th><th>File</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>TestOverrideBasicWorkflow</td><td><code>override_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestOverrideBelowThreshold</td><td><code>override_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestOverrideAboveThreshold</td><td><code>override_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestOverrideRejection</td><td><code>override_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestOverrideApplication</td><td><code>override_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestOverrideFeatureDisabled</td><td><code>override_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>Security Gate Tests</h2>
+<table>
+<thead><tr><th>Test</th><th>File</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>TestSecurity_RequesterCannotApproveOwn</td><td><code>security_gate_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestSecurity_MandatoryReason</td><td><code>security_gate_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestSecurity_DuplicateApproverRejected</td><td><code>security_gate_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestSecurity_FeatureGated</td><td><code>security_gate_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestSecurity_AuditCompleteness</td><td><code>security_gate_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestSecurity_RejectionTerminates</td><td><code>security_gate_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestSecurity_TimeFieldsPopulated</td><td><code>security_gate_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>Migration Compatibility Tests</h2>
+<table>
+<thead><tr><th>Test</th><th>File</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>TestMigration_LegacyTenantDefaults</td><td><code>migration_compatibility_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestMigration_TenantSpecificThreshold</td><td><code>migration_compatibility_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestMigration_SystemDefaultFallback</td><td><code>migration_compatibility_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestMigration_PublicAPIUnchanged</td><td><code>migration_compatibility_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestMigration_BackwardCompatible</td><td><code>migration_compatibility_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>Performance Gate Tests</h2>
+<table>
+<thead><tr><th>Test</th><th>Threshold</th><th>Actual</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>TestPerf_1000InteractiveRequests</td><td>< 5000ms</td><td>24.6ms</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestPerf_500BatchRequests</td><td>< 5000ms</td><td>3.2ms</td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestPerf_100OverrideRequests</td><td>< 5000ms</td><td>1.2ms</td><td><span class="pill ok">PASS</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>Health & Smoke Tests</h2>
+<table>
+<thead><tr><th>Test</th><th>File</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>TestHealth</td><td><code>health_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestPricingSmoke</td><td><code>pricing_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestPromotionSmoke</td><td><code>promotion_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestBatchSmoke</td><td><code>batch_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+<tr><td>TestOverrideSmoke</td><td><code>override_test.go</code></td><td><span class="pill ok">PASS</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>Coverage Summary</h2>
+<table>
+<thead><tr><th>Area</th><th>Tests</th><th>Coverage</th></tr></thead>
+<tbody>
+<tr><td>Defect correction (duplicate discount)</td><td>7</td><td>Interactive + batch + overlap + wildcard + repeated-path</td></tr>
+<tr><td>Override workflow</td><td>6</td><td>Basic + below/above threshold + rejection + application + feature flag</td></tr>
+<tr><td>Security gates</td><td>7</td><td>Self-approval + reason + duplicate + feature + audit + rejection + time</td></tr>
+<tr><td>Migration compatibility</td><td>5</td><td>Legacy + tenant-specific + system default + API + backward compat</td></tr>
+<tr><td>Performance gates</td><td>3</td><td>Interactive + batch + override throughput</td></tr>
+<tr><td>Health & smoke</td><td>5</td><td>Health + pricing + promotion + batch + override smoke</td></tr>
+<tr><td>Additional regression</td><td>10</td><td>Edge cases and boundary conditions</td></tr>
+<tr><td><strong>Total</strong></td><td><strong>43</strong></td><td><strong>100% pass</strong></td></tr>
+</tbody>
+</table>
+</div>
+
+</div>
+</body>
+</html>
