@@ -2,8 +2,8 @@
   "build": "cd frontend && npm install --no-audit --no-fund && npm run build",
   "start": [
     "go build -o /tmp/api ./cmd/api && STORAGE_BACKEND=memory LISTEN_ADDR=:8080 /tmp/api",
-    "cd frontend && npm start"
+    "cd frontend && npm run dev"
   ],
-  "port": 4173,
+  "port": 5173,
   "path": "/"
 }
