@@ -54,15 +54,29 @@ func Apply(candidates []domain.Promotion, base money.Money, quantity int64, requ
 	ordered := append([]domain.Promotion(nil), sortByPriority(skuSpecific)...)
 	ordered = append(ordered, sortByPriority(wildcard)...)
 
+	// De-duplicate by promotion id. A single promotion id can be
+	// returned by the storage layer more than once when the operator
+	// registered the same logical promotion with two different rule
+	// rows (one SKU-specific, one channel-wildcard). Without this
+	// guard the same discount would be applied twice — once via the
+	// SKU-specific path and once via the wildcard path — and the
+	// customer would receive the discount twice. The first visit wins
+	// (sku-specific path is iterated first, so SKU-specific rules
+	// take precedence over the wildcard rule for the same id).
+	seen := make(map[string]struct{}, len(ordered))
+
 	// Walk the merged list and apply every promotion we see. The
-	// storage layer is responsible for returning each promotion id at
-	// most once; if the same id is visible via both the SKU-specific
-	// and the channel-wildcard rule rows, the storage layer will return
-	// it twice and this loop will apply it twice.
+	// `seen` map above guarantees each promotion id is applied at
+	// most once, even when the storage layer returns the same id via
+	// both the SKU-specific and the channel-wildcard rule rows.
 	for _, p := range ordered {
 		if !p.IsActiveAt(at) {
 			continue
 		}
+		if _, dup := seen[p.ID]; dup {
+			continue
+		}
+		seen[p.ID] = struct{}{}
 		before := f
 		switch p.Type {
 		case domain.PromotionPercent:

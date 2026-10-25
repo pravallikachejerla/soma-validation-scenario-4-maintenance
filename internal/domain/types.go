@@ -6,9 +6,11 @@ import "time"
 
 // Tenant represents an isolated pricing tenant.
 type Tenant struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
+	ID                 string    `json:"id"`
+	Name               string    `json:"name"`
+	CreatedAt          time.Time `json:"created_at"`
+	OverrideThreshold  int64     `json:"override_threshold_yen"` // 0 means "use default"
+	OverrideEnabled    bool      `json:"override_enabled"`       // feature flag; off = legacy behaviour
 }
 
 // User is a synthetic operator. Roles are coarse-grained: admin, pricing.
@@ -113,4 +115,69 @@ type ConfigVersion struct {
 	TenantID string    `json:"tenant_id"`
 	Version  int64     `json:"version"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// OverrideRequestStatus enumerates the lifecycle states of a manual
+// override request.
+type OverrideRequestStatus string
+
+const (
+	OverrideStatusPending   OverrideRequestStatus = "pending"
+	OverrideStatusApproved  OverrideRequestStatus = "approved"
+	OverrideStatusRejected  OverrideRequestStatus = "rejected"
+	OverrideStatusCancelled OverrideRequestStatus = "cancelled"
+	OverrideStatusApplied   OverrideRequestStatus = "applied"
+)
+
+// OverrideRequest is a request to apply a manual price override above
+// the tenant's configured threshold. The request must collect the
+// required number of approvals (1 below threshold, 2 at-or-above
+// threshold) from approvers who are NOT the requester, each with a
+// mandatory reason, before it can be applied.
+type OverrideRequest struct {
+	ID            string               `json:"id"`
+	TenantID      string               `json:"tenant_id"`
+	RequesterID   string               `json:"requester_id"`
+	SKU           string               `json:"sku"`
+	Channel       string               `json:"channel"`
+	CustomerID    string               `json:"customer_id"`
+	OriginalYen   int64                `json:"original_yen"`
+	OverrideYen   int64                `json:"override_yen"`
+	Reason        string               `json:"reason"`
+	Status        OverrideRequestStatus `json:"status"`
+	Approvals     []OverrideApproval   `json:"approvals"`
+	RequiredCount int                  `json:"required_approvals"`
+	CreatedAt     time.Time            `json:"created_at"`
+	UpdatedAt     time.Time            `json:"updated_at"`
+	AppliedAt     *time.Time           `json:"applied_at,omitempty"`
+}
+
+// OverrideApproval is a single approval (or rejection) recorded against
+// an OverrideRequest. The ApproverID must differ from the requester.
+type OverrideApproval struct {
+	ApproverID string    `json:"approver_id"`
+	Decision   string    `json:"decision"` // "approve" or "reject"
+	Reason     string    `json:"reason"`
+	At         time.Time `json:"at"`
+}
+
+// DefaultOverrideThresholdYen is the system-wide default applied when a
+// tenant has not configured its own threshold. Per the corrected
+// requirements, this is JPY 5,000,000.
+const DefaultOverrideThresholdYen int64 = 5_000_000
+
+// EffectiveOverrideThreshold returns the tenant's configured threshold
+// or the system default when the tenant has not set one.
+func (t Tenant) EffectiveOverrideThreshold() int64 {
+	if t.OverrideThreshold > 0 {
+		return t.OverrideThreshold
+	}
+	return DefaultOverrideThresholdYen
+}
+
+// RequiresTwoApprovals reports whether an override of `overrideYen`
+// requires two distinct approvers (i.e. the override is at or above
+// the tenant's effective threshold).
+func (t Tenant) RequiresTwoApprovals(overrideYen int64) bool {
+	return overrideYen >= t.EffectiveOverrideThreshold()
 }

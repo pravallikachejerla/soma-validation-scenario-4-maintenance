@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -378,4 +379,128 @@ func (s *PostgresStore) Exec(ctx context.Context, sql string, args ...any) error
 		return fmt.Errorf("exec: %w", err)
 	}
 	return nil
+}
+
+func encodeApprovals(a []domain.OverrideApproval) []byte {
+	if a == nil {
+		a = []domain.OverrideApproval{}
+	}
+	b, _ := json.Marshal(a)
+	return b
+}
+
+func decodeApprovals(b []byte) []domain.OverrideApproval {
+	if len(b) == 0 {
+		return []domain.OverrideApproval{}
+	}
+	var out []domain.OverrideApproval
+	_ = json.Unmarshal(b, &out)
+	if out == nil {
+		return []domain.OverrideApproval{}
+	}
+	return out
+}
+
+// Override request storage (Postgres).
+
+func (s *PostgresStore) CreateOverrideRequest(ctx context.Context, r domain.OverrideRequest) error {
+	approvals := encodeApprovals(r.Approvals)
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO override_requests (
+			id, tenant_id, requester_id, sku, channel, customer_id,
+			original_yen, override_yen, reason, status, approvals,
+			required_count, created_at, updated_at, applied_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+	`,
+		r.ID, r.TenantID, r.RequesterID, r.SKU, r.Channel, r.CustomerID,
+		r.OriginalYen, r.OverrideYen, r.Reason, string(r.Status), approvals,
+		r.RequiredCount, r.CreatedAt, r.UpdatedAt, r.AppliedAt,
+	)
+	return err
+}
+
+func (s *PostgresStore) UpdateOverrideRequest(ctx context.Context, r domain.OverrideRequest) error {
+	approvals := encodeApprovals(r.Approvals)
+	res, err := s.pool.Exec(ctx, `
+		UPDATE override_requests SET
+			requester_id = $2, sku = $3, channel = $4, customer_id = $5,
+			original_yen = $6, override_yen = $7, reason = $8, status = $9,
+			approvals = $10, required_count = $11, updated_at = $12, applied_at = $13
+		WHERE id = $1
+	`, r.ID, r.RequesterID, r.SKU, r.Channel, r.CustomerID,
+		r.OriginalYen, r.OverrideYen, r.Reason, string(r.Status), approvals,
+		r.RequiredCount, r.UpdatedAt, r.AppliedAt,
+	)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetOverrideRequest(ctx context.Context, id string) (domain.OverrideRequest, error) {
+	var r domain.OverrideRequest
+	var status string
+	var approvals []byte
+	var appliedAt *time.Time
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, requester_id, sku, channel, customer_id,
+			original_yen, override_yen, reason, status, approvals,
+			required_count, created_at, updated_at, applied_at
+		FROM override_requests WHERE id = $1
+	`, id).Scan(
+		&r.ID, &r.TenantID, &r.RequesterID, &r.SKU, &r.Channel, &r.CustomerID,
+		&r.OriginalYen, &r.OverrideYen, &r.Reason, &status, &approvals,
+		&r.RequiredCount, &r.CreatedAt, &r.UpdatedAt, &appliedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.OverrideRequest{}, ErrNotFound
+	}
+	if err != nil {
+		return domain.OverrideRequest{}, err
+	}
+	r.Status = domain.OverrideRequestStatus(status)
+	r.AppliedAt = appliedAt
+	r.Approvals = decodeApprovals(approvals)
+	return r, nil
+}
+
+func (s *PostgresStore) ListOverrideRequests(ctx context.Context, tenantID string, limit int) ([]domain.OverrideRequest, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, requester_id, sku, channel, customer_id,
+			original_yen, override_yen, reason, status, approvals,
+			required_count, created_at, updated_at, applied_at
+		FROM override_requests
+		WHERE ($1 = '' OR tenant_id = $1)
+		ORDER BY created_at DESC
+		LIMIT $2
+	`, tenantID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]domain.OverrideRequest, 0)
+	for rows.Next() {
+		var r domain.OverrideRequest
+		var status string
+		var approvals []byte
+		var appliedAt *time.Time
+		if err := rows.Scan(
+			&r.ID, &r.TenantID, &r.RequesterID, &r.SKU, &r.Channel, &r.CustomerID,
+			&r.OriginalYen, &r.OverrideYen, &r.Reason, &status, &approvals,
+			&r.RequiredCount, &r.CreatedAt, &r.UpdatedAt, &appliedAt,
+		); err != nil {
+			return nil, err
+		}
+		r.Status = domain.OverrideRequestStatus(status)
+		r.AppliedAt = appliedAt
+		r.Approvals = decodeApprovals(approvals)
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
