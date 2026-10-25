@@ -6,11 +6,11 @@ import "time"
 
 // Tenant represents an isolated pricing tenant.
 type Tenant struct {
-	ID                 string    `json:"id"`
-	Name               string    `json:"name"`
-	CreatedAt          time.Time `json:"created_at"`
-	OverrideThreshold  int64     `json:"override_threshold_yen"` // 0 means "use default"
-	OverrideEnabled    bool      `json:"override_enabled"`       // feature flag; off = legacy behaviour
+	ID                string    `json:"id"`
+	Name              string    `json:"name"`
+	CreatedAt         time.Time `json:"created_at"`
+	OverrideThreshold int64     `json:"override_threshold_yen"` // 0 means "use default"
+	OverrideEnabled   bool      `json:"override_enabled"`       // feature flag; off = legacy behaviour
 }
 
 // User is a synthetic operator. Roles are coarse-grained: admin, pricing.
@@ -112,8 +112,8 @@ type AuditEvent struct {
 // ConfigVersion is bumped whenever a tenant's configuration changes in a
 // way that may affect pricing outcomes.
 type ConfigVersion struct {
-	TenantID string    `json:"tenant_id"`
-	Version  int64     `json:"version"`
+	TenantID  string    `json:"tenant_id"`
+	Version   int64     `json:"version"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -135,21 +135,21 @@ const (
 // threshold) from approvers who are NOT the requester, each with a
 // mandatory reason, before it can be applied.
 type OverrideRequest struct {
-	ID            string               `json:"id"`
-	TenantID      string               `json:"tenant_id"`
-	RequesterID   string               `json:"requester_id"`
-	SKU           string               `json:"sku"`
-	Channel       string               `json:"channel"`
-	CustomerID    string               `json:"customer_id"`
-	OriginalYen   int64                `json:"original_yen"`
-	OverrideYen   int64                `json:"override_yen"`
-	Reason        string               `json:"reason"`
+	ID            string                `json:"id"`
+	TenantID      string                `json:"tenant_id"`
+	RequesterID   string                `json:"requester_id"`
+	SKU           string                `json:"sku"`
+	Channel       string                `json:"channel"`
+	CustomerID    string                `json:"customer_id"`
+	OriginalYen   int64                 `json:"original_yen"`
+	OverrideYen   int64                 `json:"override_yen"`
+	Reason        string                `json:"reason"`
 	Status        OverrideRequestStatus `json:"status"`
-	Approvals     []OverrideApproval   `json:"approvals"`
-	RequiredCount int                  `json:"required_approvals"`
-	CreatedAt     time.Time            `json:"created_at"`
-	UpdatedAt     time.Time            `json:"updated_at"`
-	AppliedAt     *time.Time           `json:"applied_at,omitempty"`
+	Approvals     []OverrideApproval    `json:"approvals"`
+	RequiredCount int                   `json:"required_approvals"`
+	CreatedAt     time.Time             `json:"created_at"`
+	UpdatedAt     time.Time             `json:"updated_at"`
+	AppliedAt     *time.Time            `json:"applied_at,omitempty"`
 }
 
 // OverrideApproval is a single approval (or rejection) recorded against

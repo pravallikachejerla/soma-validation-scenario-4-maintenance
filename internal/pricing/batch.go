@@ -31,7 +31,7 @@ func NewBatchEngine(s storage.Store, l *observability.Logger, c *ResultCache) *B
 
 // BatchResult is the per-row output of a batch pricing run.
 type BatchResult struct {
-	Request domain.PricingRequest `json:"request"`
+	Request  domain.PricingRequest  `json:"request"`
 	Decision domain.PricingDecision `json:"decision"`
 }
 

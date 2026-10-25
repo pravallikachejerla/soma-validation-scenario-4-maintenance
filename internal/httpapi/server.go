@@ -107,9 +107,9 @@ func (s *Server) withCtx(h http.HandlerFunc) http.HandlerFunc {
 		ww := &statusRecorder{ResponseWriter: w, status: 200}
 		h(ww, r.WithContext(ctx))
 		s.Logger.Info(ctx, "http.request", map[string]any{
-			"method":    r.Method,
-			"path":      r.URL.Path,
-			"status":    ww.status,
+			"method":     r.Method,
+			"path":       r.URL.Path,
+			"status":     ww.status,
 			"latency_ms": time.Since(start).Milliseconds(),
 		})
 	}
@@ -174,8 +174,8 @@ func (s *Server) handleBatch(w http.ResponseWriter, r *http.Request) {
 	jobID := "job-" + uuid.NewString()
 	hash := pricing.ResultHash(results)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"job_id":     jobID,
-		"result":     results,
+		"job_id":      jobID,
+		"result":      results,
 		"result_hash": hash,
 	})
 }
