@@ -86,6 +86,17 @@ func main() {
 	}()
 
 	logger.Info(context.Background(), "api.listening", map[string]any{"addr": addr})
+
+	// Auto-seed when using the in-memory backend so that the API is
+	// immediately usable for browser tests and local exploration.
+	// The Postgres backend is left alone — production deployments
+	// seed via the migrate + seed commands.
+	if os.Getenv("STORAGE_BACKEND") == "memory" {
+		if err := as.Seed(context.Background(), application.DefaultProfile()); err != nil {
+			log.Printf("auto-seed failed: %v", err)
+		}
+	}
+
 	if err := hs.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("listen: %v", err)
 	}

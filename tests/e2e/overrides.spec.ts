@@ -10,26 +10,17 @@ import { test, expect } from '@playwright/test';
 //   - A requester cannot approve their own request.
 //   - An approval reason is mandatory.
 //
-// The E2E stage starts the app fresh with an empty in-memory store, so
-// each test seeds the database before interacting with the UI.
-
-async function seed(page: import('@playwright/test').Page) {
-  const res = await page.request.post('/api/v1/admin/seed');
-  expect(res.ok()).toBeTruthy();
-}
+// The API auto-seeds the in-memory store on startup, so no explicit
+// seed call is needed.
 
 test('manual override workflow: create, approve, apply', async ({ page }) => {
-  await seed(page);
   await page.goto('/overrides');
 
   // The page heading should be visible.
   await expect(page.getByRole('heading', { name: 'Manual price overrides' })).toBeVisible();
 
-  // Enable the feature (idempotent — if already enabled, the button toggles it off,
-  // so we check the current state first).
-  await page.getByRole('button', { name: /Toggle override feature/ }).click();
-
-  // Set a low threshold so the override we create is above it.
+  // The feature is already enabled on tenant-a (auto-seeded). Set a
+  // low threshold so the override we create is above it.
   await page.getByRole('button', { name: 'Set threshold ¥3,000,000' }).click();
 
   // Fill in the create form.
@@ -57,11 +48,9 @@ test('manual override workflow: create, approve, apply', async ({ page }) => {
 });
 
 test('requester cannot approve their own request', async ({ page }) => {
-  await seed(page);
   await page.goto('/overrides');
 
-  // Ensure feature is enabled.
-  await page.getByRole('button', { name: /Toggle override feature/ }).click();
+  // Set a low threshold.
   await page.getByRole('button', { name: 'Set threshold ¥3,000,000' }).click();
 
   // Create a request as the requester.
@@ -77,10 +66,8 @@ test('requester cannot approve their own request', async ({ page }) => {
 });
 
 test('approval reason is mandatory', async ({ page }) => {
-  await seed(page);
   await page.goto('/overrides');
 
-  await page.getByRole('button', { name: /Toggle override feature/ }).click();
   await page.getByRole('button', { name: 'Set threshold ¥3,000,000' }).click();
 
   await page.getByLabel('Override ¥').fill('500');
