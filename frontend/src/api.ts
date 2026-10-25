@@ -46,55 +46,6 @@ export interface AuditEvent {
   created_at: string;
 }
 
-export interface Tenant {
-  id: string;
-  name: string;
-  created_at: string;
-  override_threshold_yen: number;
-  override_enabled: boolean;
-}
-
-export interface OverrideApproval {
-  approver_id: string;
-  decision: "approve" | "reject";
-  reason: string;
-  at: string;
-}
-
-export interface OverrideRequest {
-  id: string;
-  tenant_id: string;
-  requester_id: string;
-  sku: string;
-  channel: string;
-  customer_id: string;
-  original_yen: number;
-  override_yen: number;
-  reason: string;
-  status: "pending" | "approved" | "rejected" | "cancelled" | "applied";
-  approvals: OverrideApproval[];
-  required_approvals: number;
-  created_at: string;
-  updated_at: string;
-  applied_at?: string;
-}
-
-export interface CreateOverrideInput {
-  tenant_id: string;
-  requester_id: string;
-  sku: string;
-  channel: string;
-  customer_id: string;
-  original_yen: number;
-  override_yen: number;
-  reason: string;
-}
-
-export interface DecideOverrideInput {
-  approver_id: string;
-  reason: string;
-}
-
 async function jsonOrThrow<T>(r: Response): Promise<T> {
   if (!r.ok) {
     const text = await r.text();
@@ -170,6 +121,57 @@ export async function listAudit(tenant: string, limit = 50): Promise<AuditEvent[
   );
 }
 
+export const DEFAULT_TENANT = "tenant-a";
+
+export interface Tenant {
+  id: string;
+  name: string;
+  created_at: string;
+  override_threshold_yen: number;
+  override_enabled: boolean;
+}
+
+export interface OverrideApproval {
+  approver_id: string;
+  decision: "approve" | "reject";
+  reason: string;
+  at: string;
+}
+
+export interface OverrideRequest {
+  id: string;
+  tenant_id: string;
+  requester_id: string;
+  sku: string;
+  channel: string;
+  customer_id: string;
+  original_yen: number;
+  override_yen: number;
+  reason: string;
+  status: "pending" | "approved" | "rejected" | "cancelled" | "applied";
+  approvals: OverrideApproval[];
+  required_approvals: number;
+  created_at: string;
+  updated_at: string;
+  applied_at?: string;
+}
+
+export interface CreateOverrideInput {
+  tenant_id: string;
+  requester_id: string;
+  sku: string;
+  channel: string;
+  customer_id: string;
+  original_yen: number;
+  override_yen: number;
+  reason: string;
+}
+
+export interface DecideOverrideInput {
+  approver_id: string;
+  reason: string;
+}
+
 export async function getTenant(tenant: string): Promise<Tenant> {
   return jsonOrThrow<Tenant>(
     await fetch(`/api/v1/tenants/${encodeURIComponent(tenant)}`)
@@ -215,5 +217,3 @@ export async function decideOverride(
     })
   );
 }
-
-export const DEFAULT_TENANT = "tenant-a";
