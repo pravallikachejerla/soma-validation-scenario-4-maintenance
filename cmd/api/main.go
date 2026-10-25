@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/somagen/scenario4/internal/application"
+	"github.com/somagen/scenario4/internal/domain"
 	"github.com/somagen/scenario4/internal/httpapi"
 	"github.com/somagen/scenario4/internal/observability"
 	"github.com/somagen/scenario4/internal/storage"
@@ -57,16 +58,16 @@ func main() {
 	// so the UI and E2E tests can exercise the workflow without an
 	// explicit seed call. This is additive and does not change the
 	// public pricing API.
-	seedCtx, seedCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if err := as.Seed(seedCtx, application.DefaultProfile()); err != nil {
-		logger.Warn(seedCtx, "auto.seed.failed", map[string]any{"err": err.Error()})
-	}
-	// Enable the override feature on every seeded tenant.
+	seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	for _, tid := range []string{"tenant-a", "tenant-b", "tenant-c"} {
-		t, err := store.GetTenant(seedCtx, tid)
-		if err == nil {
-			t.OverrideEnabled = true
-			_ = store.UpsertTenant(seedCtx, t)
+		t := domain.Tenant{
+			ID:              tid,
+			Name:            "Synthetic " + tid,
+			CreatedAt:       time.Now().UTC(),
+			OverrideEnabled: true,
+		}
+		if err := store.UpsertTenant(seedCtx, t); err != nil {
+			logger.Warn(seedCtx, "auto.seed.tenant.failed", map[string]any{"tenant": tid, "err": err.Error()})
 		}
 	}
 	seedCancel()
