@@ -1,4 +1,5 @@
 -- Reverse migration for 0001_init.sql. Drop in reverse dependency order.
+DROP TABLE IF EXISTS override_requests;
 DROP TABLE IF EXISTS config_versions;
 DROP TABLE IF EXISTS audit_events;
 DROP TABLE IF EXISTS batch_jobs;
